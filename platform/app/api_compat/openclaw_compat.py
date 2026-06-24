@@ -19,7 +19,6 @@ from app.runtime_backends.hermes_files import (
     browse_hermes_filemanager,
     delete_hermes_filemanager_path,
     make_hermes_filemanager_directory,
-    normalize_hermes_filemanager_path,
 )
 from app.runtime_backends.hermes_skills import (
     delete_skill_from_hermes_container,
@@ -362,7 +361,7 @@ async def upload_dedicated_file(
     return await backend.upload_file(
         RuntimeContext(user=user, scope="dedicated"),
         file,
-        target_dir=normalize_hermes_filemanager_path(path or upload_dir),
+        target_dir=path or upload_dir,
     )
 
 

@@ -125,40 +125,34 @@ def normalize_hermes_workspace_path(requested_path: str | None) -> str:
     return normalized
 
 
-# def normalize_hermes_filemanager_path(requested_path: str | None) -> str:
-#     raw = (requested_path or "").strip().replace("\\", "/")
-#     raw = raw.removeprefix("~/.openclaw/")
-#     raw = raw.removeprefix("/root/.openclaw/")
-#     raw = raw.removeprefix("root/.openclaw/")
-#     raw = raw.removeprefix("/opt/data/")
-#     return _normalize_profile_storage_path(raw)
-
-#针对文件管路径调整至/opt/data作处理
 def normalize_hermes_filemanager_path(requested_path: str | None) -> str:
     raw = (requested_path or "").strip().replace("\\", "/")
-
     raw = raw.removeprefix("~/.openclaw/")
     raw = raw.removeprefix("/root/.openclaw/")
     raw = raw.removeprefix("root/.openclaw/")
-
-    # 首页直接定位到 /opt/data
-    if not raw:
-        return "/opt/data"
-
-    # 如果前端已经传绝对路径
     if raw.startswith("/"):
         target = posixpath.normpath(raw)
+        if target == HERMES_DATA_ROOT:
+            return ""
+        if target.startswith(f"{HERMES_DATA_ROOT}/"):
+            raw = target[len(HERMES_DATA_ROOT) + 1 :]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Hermes file path cannot escape /opt/data",
+            )
     else:
-        target = posixpath.normpath(f"/opt/data/{raw}")
-
-    # 防止越界
-    if not target.startswith("/opt/data"):
+        raw = raw.removeprefix("opt/data/")
+    normalized = posixpath.normpath(raw.strip("/"))
+    if normalized in {"", "."}:
+        return ""
+    if normalized == ".." or normalized.startswith("../"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Hermes file path cannot escape /opt/data",
         )
+    return normalized
 
-    return target
 
 def normalize_hermes_read_path(requested_path: str | None) -> str:
     raw = (requested_path or "").strip().replace("\\", "/")
@@ -286,6 +280,17 @@ print(json.dumps(payload))
 """
 
 
+def _is_profile_knowledge_root(storage_path: str) -> bool:
+    parts = storage_path.strip("/").split("/")
+    return (
+        len(parts) == 4
+        and parts[0] == "profiles"
+        and bool(parts[1])
+        and parts[2] == "workspace"
+        and parts[3] == "knowledge"
+    )
+
+
 def browse_hermes_filemanager(container_id_or_name: str | None, requested_path: str | None) -> dict:
     if not container_id_or_name:
         raise HTTPException(
@@ -303,6 +308,18 @@ def browse_hermes_filemanager(container_id_or_name: str | None, requested_path: 
 
     result = container.exec_run(["python3", "-c", _filemanager_script(), storage_path])
     exit_code, output = _exec_output(result)
+    if exit_code == 4 and _is_profile_knowledge_root(storage_path):
+        absolute_path = f"{HERMES_DATA_ROOT}/{storage_path}"
+        mkdir_result = container.exec_run(["sh", "-lc", f"mkdir -p -- {shlex.quote(absolute_path)}"], user="root")
+        mkdir_exit_code, mkdir_output = _exec_output(mkdir_result)
+        if mkdir_exit_code != 0:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=mkdir_output.decode("utf-8", errors="replace") or "Failed to create Hermes knowledge directory",
+            )
+        chown_hermes_path(container, absolute_path)
+        result = container.exec_run(["python3", "-c", _filemanager_script(), storage_path])
+        exit_code, output = _exec_output(result)
     if exit_code == 4:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hermes file not found")
     if exit_code != 0:
