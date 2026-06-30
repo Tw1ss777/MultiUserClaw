@@ -1,16 +1,30 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Bot, Loader2 } from 'lucide-react'
-import { login, register } from '../lib/api'
+ import { useState, useEffect } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ import { Bot, Loader2 } from 'lucide-react'
+ import { login, register, ssoLogin, isLoggedIn } from '../lib/api'
 
-export default function Login() {
-  const navigate = useNavigate()
+ export default function Login() {
+   const navigate = useNavigate()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const hubToken = params.get('hub_token')
+    const mode = params.get('mode')
+    if (mode) localStorage.setItem('ui_mode', mode)
+    if (hubToken && !isLoggedIn()) {
+      setLoading(true)
+      ssoLogin(hubToken)
+        .then(() => navigate('/agents', { replace: true }))
+        .catch((err) => setError(err.message))
+        .finally(() => setLoading(false))
+    }
+  }, [navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

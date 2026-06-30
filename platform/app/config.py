@@ -117,6 +117,9 @@ class Settings(BaseSettings):
     training_trace_dir: str = ".hermes/training_traces"
     training_trace_hash_salt: str = ""
 
+    # SSO: ai-hub verification endpoint base URL
+    aihub_base_url: str = "http://localhost:3000/agents/hub_api"
+
     model_config = {"env_prefix": "PLATFORM_"}
 
 

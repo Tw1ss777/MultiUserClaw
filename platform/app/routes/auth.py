@@ -2,7 +2,9 @@
 
 from pydantic import BaseModel, EmailStr
 from fastapi import APIRouter, Depends, HTTPException, status
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.auth.service import (
     AuthFailureReason,
@@ -19,6 +21,7 @@ from app.auth.service import (
     verify_password,
 )
 from app.audit import write_audit_log
+from app.config import settings
 from app.auth.dependencies import get_current_user
 from app.db.engine import get_db
 from app.db.models import User
@@ -53,6 +56,10 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+class SSOLoginRequest(BaseModel):
+    infox_token: str
+    runtime_mode: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -121,6 +128,81 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         role=user.role,
     )
 
+@router.post("/sso", response_model=TokenResponse)
+async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
+    if not settings.aihub_base_url:
+        raise HTTPException(status_code=400, detail="SSO not configured (AIHUB_BASE_URL)")
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                f"{settings.aihub_base_url}/auth/verify",
+                json={"token": req.infox_token},
+                timeout=10.0,
+            )
+        body = resp.json()
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"SSO verification request failed: ai-hub may be unreachable ({e})",
+        )
+    # ai-hub TransformInterceptor wraps responses as {code:0, data: {...}, message:"ok"}
+    payload = body.get("data", body) if isinstance(body, dict) else body
+    if not (200 <= resp.status_code < 300) or not isinstance(payload, dict) or not payload.get("valid"):
+        reason = payload.get("reason", "unknown") if isinstance(payload, dict) else "invalid response"
+        raise HTTPException(status_code=401, detail=f"SSO token invalid: {reason}")
+    user_info = payload["user"]
+    sso_username = (user_info.get("username") or "").strip()
+    if not sso_username:
+        raise HTTPException(status_code=400, detail="No username from SSO provider")
+    sso_email = f"{sso_username}@test.com"
+    user = await get_user_by_username(db, sso_username)
+    if user is None:
+        import secrets
+
+        random_pw = secrets.token_urlsafe(24)
+        base_username = sso_username
+        try:
+            user = User(
+                username=base_username,
+                email=sso_email,
+                password_hash=hash_password(random_pw),
+                sso_uid=user_info.get("id"),
+                sso_token=req.infox_token,
+                runtime_mode=req.runtime_mode or "shared",
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+        except IntegrityError:
+            await db.rollback()
+            # Username conflict → append random suffix
+            base_username = f"{base_username}_{secrets.token_hex(4)}"
+            user = User(
+                username=base_username,
+                email=sso_email,
+                password_hash=hash_password(random_pw),
+                sso_uid=user_info.get("id"),
+                sso_token=req.infox_token,
+                runtime_mode=req.runtime_mode or "shared",
+            )
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+    await write_audit_log(
+        db,
+        action="sso_login",
+        user_id=user.id,
+        resource=user.username,
+        detail={"provider": "aihub"},
+        commit=True,
+    )
+    return TokenResponse(
+        access_token=create_access_token(user.id, user.role),
+        refresh_token=create_refresh_token(user.id),
+        user_id=user.id,
+        username=user.username,
+        role=user.role,
+    )
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(req: RefreshRequest, db: AsyncSession = Depends(get_db)):

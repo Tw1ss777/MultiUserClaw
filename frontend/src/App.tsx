@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import Login from './pages/Login'
@@ -19,13 +20,39 @@ import Nodes from './pages/Nodes'
 import Plugins from './pages/Plugins'
 import TerminalPage from './pages/Terminal'
 import { isLoggedIn } from './lib/api'
+import { ssoLogin } from './lib/api'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  if (!isLoggedIn()) return <Navigate to="/login" replace />
+  if (!isLoggedIn()) return <Navigate to={`/login${window.location.search}`} replace />
   return <>{children}</>
 }
 
 export default function App() {
+  const [ssoState, setSsoState] = useState<'idle' | 'loading'>('idle')
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const mode = params.get('mode')
+    const hubToken = params.get('hub_token')
+    if (mode) localStorage.setItem('ui_mode', mode)
+    if (hubToken) {
+      setSsoState('loading')
+      localStorage.removeItem('openclaw_access_token')
+      localStorage.removeItem('openclaw_refresh_token')
+      ssoLogin(hubToken)
+        .then(() => { window.location.href = '/agents' })
+        .catch(() => { setSsoState('idle') })
+    }
+  }, [])
+  if (ssoState === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-dark-bg text-dark-text">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-blue border-t-transparent" />
+          <span className="text-sm text-dark-muted">SSO 登录中...</span>
+        </div>
+      </div>
+    )
+  }
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
