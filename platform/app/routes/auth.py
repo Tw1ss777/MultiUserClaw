@@ -155,6 +155,7 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
     if not sso_username:
         raise HTTPException(status_code=400, detail="No username from SSO provider")
     sso_email = f"{sso_username}@test.com"
+    litellm_key = user_info.get("litellmApiKey")
     user = await get_user_by_username(db, sso_username)
     if user is None:
         import secrets
@@ -168,6 +169,7 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
                 password_hash=hash_password(random_pw),
                 sso_uid=user_info.get("id"),
                 sso_token=req.infox_token,
+                litellm_api_key=litellm_key,
                 runtime_mode=req.runtime_mode or "shared",
             )
             db.add(user)
@@ -183,11 +185,18 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
                 password_hash=hash_password(random_pw),
                 sso_uid=user_info.get("id"),
                 sso_token=req.infox_token,
+                litellm_api_key=litellm_key,
                 runtime_mode=req.runtime_mode or "shared",
             )
             db.add(user)
             await db.commit()
             await db.refresh(user)
+    else:
+        if litellm_key:
+            user.litellm_api_key = litellm_key
+            await db.commit()
+
+
     await write_audit_log(
         db,
         action="sso_login",

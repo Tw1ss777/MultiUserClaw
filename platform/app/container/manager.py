@@ -127,7 +127,7 @@ def _runtime_command() -> list[str]:
     return ["node", "bridge/dist/bridge/start.js"]
 
 
-def _runtime_environment(container_token: str, sso_token: str | None) -> dict[str, str]:
+def _runtime_environment(container_token: str, sso_token: str | None, litellm_api_key: str | None = None) -> dict[str, str]:
     env = {
         "NANOBOT_PROXY__URL": "http://gateway:8080/llm/v1",
         "NANOBOT_PROXY__TOKEN": container_token,
@@ -154,6 +154,11 @@ def _runtime_environment(container_token: str, sso_token: str | None) -> dict[st
         )
     if sso_token:
         env["INFOX_MED_TOKEN"] = sso_token
+    if settings.litellm_base_url:
+        env["LITELLM_BASE_URL"] = settings.litellm_base_url
+    litellm_key = litellm_api_key or settings.litellm_api_key
+    if litellm_key:
+        env["LITELLM_API_KEY"] = litellm_key
     return env
 
 
@@ -665,8 +670,9 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
     user_result = await db.execute(select(User).where(User.id == user_id))
     user_row = user_result.scalar_one_or_none()
     sso_token = user_row.sso_token if user_row else None
+    litellm_api_key = user_row.litellm_api_key if user_row else None
 
-    container_env = _runtime_environment(container_token, sso_token)
+    container_env = _runtime_environment(container_token, sso_token, litellm_api_key=litellm_api_key)
 
     run_kwargs = {
         "image": _runtime_image(),
@@ -733,6 +739,11 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
         )
         _write_runtime_metadata(docker_container, runtime_metadata)
         _write_hermes_runtime_files(docker_container)
+        # Sync LiteLLM provider config (reads latest from settings)
+        try:
+            await _sync_litellm_config(db, user_id, docker_container)
+        except Exception as e:
+            print(f"[seed-litellm] ERROR: {e}")
 
     network_settings = docker_container.attrs["NetworkSettings"]["Networks"]
     internal_ip = network_settings.get(settings.container_network, {}).get("IPAddress", "")
@@ -750,6 +761,40 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
     await db.commit()
     await db.refresh(record)
     return record
+
+
+async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker.models.containers.Container) -> None:
+    """Ensure the container's config.yaml has the latest LiteLLM provider config."""
+    import json
+    user_row = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user_row:
+        return
+    try:
+        result = container.exec_run(["cat", "/opt/data/config.yaml"], user="hermes")
+        existing_cfg = yaml.safe_load(result.output.decode("utf-8")) or {} if result.exit_code == 0 else {}
+    except Exception:
+        existing_cfg = {}
+    providers = existing_cfg.get("custom_providers") or []
+    lm_models = json.loads(settings.litellm_models)
+    lm_provider = next((p for p in providers if isinstance(p, dict) and p.get("name") == "litellm"), None)
+    if lm_provider:
+        lm_provider["base_url"] = settings.litellm_base_url.rstrip("/")
+        lm_provider["api_key"] = user_row.litellm_api_key
+        lm_provider["models"] = lm_models
+    else:
+        providers.append({"name": "litellm", "base_url": settings.litellm_base_url.rstrip("/"), "api_key": user_row.litellm_api_key, "models": lm_models})
+    existing_cfg["custom_providers"] = providers
+    if lm_models:
+        existing_cfg["model"] = {"default": lm_models[0]["id"], "provider": "litellm"}
+    raw = yaml.safe_dump(existing_cfg, allow_unicode=True, sort_keys=False).encode("utf-8")
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        info = tarfile.TarInfo(name="config.yaml"); info.size = len(raw); info.mode = 0o644
+        tar.addfile(info, io.BytesIO(raw))
+    buf.seek(0)
+    container.put_archive("/opt/data", buf.read())
+    container.exec_run(["chown", "hermes:hermes", "/opt/data/config.yaml"], user="root")
+    print(f"[seed-litellm] synced {len(lm_models)} models for user {user_id[:8]}")
 
 
 async def ensure_running(db: AsyncSession, user_id: str) -> Container:
@@ -868,6 +913,13 @@ async def ensure_running(db: AsyncSession, user_id: str) -> Container:
                 break
         except DockerNotFound:
             return await recreate_record(record)
+
+    # Sync LiteLLM config on every ensure_running call
+    if _runtime_backend() == "hermes":
+        try:
+            await _sync_litellm_config(db, user_id, c)
+        except Exception as e:
+            print(f"[seed-litellm] ERROR: {e}")
 
     return record
 

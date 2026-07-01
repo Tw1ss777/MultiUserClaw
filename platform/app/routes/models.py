@@ -79,16 +79,6 @@ def _hermes_to_frontend(config: dict) -> dict:
 
     providers: dict = {}
 
-    # Platform default model — read-only, no API key exposed
-    if settings.default_model:
-        providers["platform"] = {
-            "baseUrl": "",
-            "api": "openai-completions",
-            "apiKey": "",
-            "models": [{"id": settings.default_model, "name": settings.default_model}],
-            "_system": True,
-        }
-
     # User-added providers
     custom_providers = config.get("custom_providers") or []
     for cp in custom_providers:

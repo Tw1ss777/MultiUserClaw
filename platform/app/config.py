@@ -120,6 +120,12 @@ class Settings(BaseSettings):
     # SSO: ai-hub verification endpoint base URL
     aihub_base_url: str = "http://localhost:3000/agents/hub_api"
 
+    # LiteLLM proxy: injected into user containers as env vars
+    litellm_base_url: str = "http://host.docker.internal:4000"
+    litellm_api_key: str = ""
+    # LiteLLM models JSON array, e.g. [{"id":"qwen3.7-plus","name":"qwen3.7-plus"}]
+    litellm_models: str = '[{"id": "qwen3.7-plus", "name": "qwen3.7-plus"},{"id":"qwen-max","name":"通义千问Max"}]'
+
     model_config = {"env_prefix": "PLATFORM_"}
 
 

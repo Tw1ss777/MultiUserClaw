@@ -36,6 +36,8 @@ class User(Base):
     # SSO fields (e.g. 如果需要SSO登录，需要这2个字段)
     sso_uid: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
     sso_token: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # LiteLLM API key provisioned by ai-hub
+    litellm_api_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
