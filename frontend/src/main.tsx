@@ -5,8 +5,9 @@ import App from './App'
 import './index.css'
 
 // 初始化主题，避免加载时闪烁
-if (localStorage.getItem('theme') === 'light') {
-  document.documentElement.classList.add('light')
+document.documentElement.classList.remove('light')
+if (localStorage.getItem('theme') === 'dark') {
+  document.documentElement.classList.add('dark')
 }
 
 createRoot(document.getElementById('root')!).render(

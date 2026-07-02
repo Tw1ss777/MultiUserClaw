@@ -2,27 +2,27 @@ import { Sun, Moon } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 export default function ThemeToggle() {
-  const [isLight, setIsLight] = useState(() => {
-    return localStorage.getItem('theme') === 'light'
+  const [isDark, setIsDark] = useState(() => {
+    return localStorage.getItem('theme') === 'dark'
   })
 
   useEffect(() => {
-    if (isLight) {
-      document.documentElement.classList.add('light')
-      localStorage.setItem('theme', 'light')
-    } else {
-      document.documentElement.classList.remove('light')
+    if (isDark) {
+      document.documentElement.classList.add('dark')
       localStorage.setItem('theme', 'dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+      localStorage.removeItem('theme')
     }
-  }, [isLight])
+  }, [isDark])
 
   return (
     <button
-      onClick={() => setIsLight(!isLight)}
+      onClick={() => setIsDark(!isDark)}
       className="text-dark-text-secondary hover:text-dark-text transition-colors"
-      title={isLight ? '切换暗色主题' : '切换亮色主题'}
+      title={isDark ? '切换亮色主题' : '切换暗色主题'}
     >
-      {isLight ? <Moon size={20} /> : <Sun size={20} />}
+      {isDark ? <Sun size={20} /> : <Moon size={20} />}
     </button>
   )
 }
