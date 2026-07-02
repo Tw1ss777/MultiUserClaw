@@ -64,10 +64,34 @@ const navSections = [
   },
 ]
 
+const limitedSections = [
+  {
+    label: 'Agents',
+    items: [
+      { to: '/agents', icon: Bot, label: 'Agents', badgeKey: 'agents' },
+      { to: '/chat', icon: MessageSquare, label: '会话' },
+    ],
+  },
+  {
+    label: '技能中心',
+    items: [
+      { to: '/models', icon: Brain, label: 'AI 模型' },
+      { to: '/files', icon: FolderOpen, label: '文件管理' },
+    ],
+  },
+  {
+    label: '系统',
+    items: [
+      { to: '/cron', icon: Clock, label: '定时任务' },
+    ],
+  },
+]
+
 export default function Sidebar() {
   const location = useLocation()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [agentCount, setAgentCount] = useState<number>(0)
+  const activeSections = user?.role === 'admin' ? navSections : limitedSections
   const [menuOpen, setMenuOpen] = useState(false)
   const [pwdModalOpen, setPwdModalOpen] = useState(false)
   const [oldPwd, setOldPwd] = useState('')
@@ -133,7 +157,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-2">
-        {navSections.map(section => (
+        {activeSections.map(section => (
           <div key={section.label} className="mb-4">
             <div className="mb-1.5 px-3 text-xs font-medium uppercase tracking-wider text-dark-text-secondary">
               {section.label}

@@ -1,21 +1,6 @@
 @import "tailwindcss";
 
 @theme {
-  --color-dark-bg: #0f1623;
-  --color-dark-sidebar: #131a2b;
-  --color-dark-card: #1a2235;
-  --color-dark-card-hover: #1e2840;
-  --color-dark-border: #243049;
-  --color-dark-text: #e2e8f0;
-  --color-dark-text-secondary: #8b9fc1;
-  --color-accent-blue: #3b82f6;
-  --color-accent-green: #22c55e;
-  --color-accent-yellow: #eab308;
-  --color-accent-red: #ef4444;
-  --color-accent-purple: #8b5cf6;
-}
-
-html.light {
   --color-dark-bg: #f0f4f8;
   --color-dark-sidebar: #ffffff;
   --color-dark-card: #ffffff;
@@ -23,6 +8,21 @@ html.light {
   --color-dark-border: #cbd5e1;
   --color-dark-text: #1e293b;
   --color-dark-text-secondary: #64748b;
+  --color-accent-blue: #3b82f6;
+  --color-accent-green: #22c55e;
+  --color-accent-yellow: #eab308;
+  --color-accent-red: #ef4444;
+  --color-accent-purple: #8b5cf6;
+}
+
+html.dark {
+  --color-dark-bg: #0f1623;
+  --color-dark-sidebar: #131a2b;
+  --color-dark-card: #1a2235;
+  --color-dark-card-hover: #1e2840;
+  --color-dark-border: #243049;
+  --color-dark-text: #e2e8f0;
+  --color-dark-text-secondary: #8b9fc1;
 }
 
 body {

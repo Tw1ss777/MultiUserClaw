@@ -48,7 +48,7 @@ export default function App() {
       <div className="flex min-h-screen items-center justify-center bg-dark-bg text-dark-text">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-blue border-t-transparent" />
-          <span className="text-sm text-dark-muted">SSO 登录中...</span>
+          <span className="text-sm text-dark-text-secondary">SSO 登录中...</span>
         </div>
       </div>
     )

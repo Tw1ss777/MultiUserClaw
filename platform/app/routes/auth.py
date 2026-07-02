@@ -155,6 +155,9 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
     if not sso_username:
         raise HTTPException(status_code=400, detail="No username from SSO provider")
     sso_email = f"{sso_username}@test.com"
+    aihub_roles = user_info.get("roles") or []
+    sso_role = "admin" if isinstance(aihub_roles, list) and "ADMIN" in aihub_roles else "user"
+    print(f"[sso] user={sso_username} aihub_roles={aihub_roles} sso_role={sso_role}")
     litellm_key = user_info.get("litellmApiKey")
     user = await get_user_by_username(db, sso_username)
     if user is None:
@@ -170,7 +173,8 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
                 sso_uid=user_info.get("id"),
                 sso_token=req.infox_token,
                 litellm_api_key=litellm_key,
-                runtime_mode=req.runtime_mode or "shared",
+                role=sso_role,
+                runtime_mode=req.runtime_mode or "dedicated",
             )
             db.add(user)
             await db.commit()
@@ -186,7 +190,8 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
                 sso_uid=user_info.get("id"),
                 sso_token=req.infox_token,
                 litellm_api_key=litellm_key,
-                runtime_mode=req.runtime_mode or "shared",
+                role=sso_role,
+                runtime_mode=req.runtime_mode or "dedicated",
             )
             db.add(user)
             await db.commit()
@@ -194,7 +199,8 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
     else:
         if litellm_key:
             user.litellm_api_key = litellm_key
-            await db.commit()
+        user.role = sso_role
+        await db.commit()
 
 
     await write_audit_log(
