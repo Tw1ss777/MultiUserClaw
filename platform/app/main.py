@@ -80,7 +80,7 @@ async def _ensure_admin_user() -> None:
 
         user = User(
             username=settings.admin_username,
-            email=f"{settings.admin_username}@localhost",
+            email=f"{settings.admin_username}@test.com",
             password_hash=hash_password(settings.admin_password),
             role="admin",
         )
