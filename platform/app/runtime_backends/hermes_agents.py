@@ -676,6 +676,14 @@ if agent_id in SYSTEM:
 target = path / "workspace" / file_name
 if file_name == "SOUL.md":
     target = path / "SOUL.md"
+QUOTA = 5 * 1024 * 1024 * 1024
+ws_dir = path / "workspace"
+if ws_dir.is_dir():
+    total = sum(f.stat().st_size for f in ws_dir.rglob("*") if f.is_file())
+    new_size = len((payload.get("content") or "").encode("utf-8"))
+    if total + new_size > QUOTA:
+        print("工作空间存储配额已满（5GB），请先清理部分文件后再上传", file=sys.stderr)
+        sys.exit(11)
 target.parent.mkdir(parents=True, exist_ok=True)
 target.write_text(payload.get("content") or "", encoding="utf-8")
 if file_name == "IDENTITY.md":
@@ -693,6 +701,8 @@ print(json.dumps({"agentId": agent_id, "workspace": workspace_for(agent_id), "fi
         raise HTTPException(status_code=403, detail="System Agent is read-only")
     if exit_code == 4:
         raise HTTPException(status_code=404, detail="Agent not found")
+    if exit_code == 11:
+        raise HTTPException(status_code=413, detail=output.decode("utf-8", errors="replace") or "工作空间存储配额已满")
     if exit_code != 0:
         raise HTTPException(status_code=500, detail=output.decode("utf-8", errors="replace") or "Failed to write Hermes Agent file")
     return json.loads(output.decode("utf-8"))

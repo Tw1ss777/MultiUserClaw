@@ -775,7 +775,12 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     except Exception:
         existing_cfg = {}
     providers = existing_cfg.get("custom_providers") or []
-    lm_models = json.loads(settings.litellm_models)
+    print(f"[seed-litellm] raw litellm_models={settings.litellm_models!r}")
+    try:
+        lm_models = json.loads(settings.litellm_models)
+    except json.JSONDecodeError as je:
+        print(f"[seed-litellm] JSON parse error: {je}")
+        return
     lm_provider = next((p for p in providers if isinstance(p, dict) and p.get("name") == "litellm"), None)
     if lm_provider:
         lm_provider["base_url"] = settings.litellm_base_url.rstrip("/")

@@ -557,6 +557,22 @@ async def write_upload_to_hermes_container(
 
     try:
         container = get_docker_container(container_id_or_name)
+        # 5GB workspace quota check
+        quota_script = (
+            "import os,sys\n"
+            f"p='/opt/data/{upload_dir}'\n"
+            "while p and os.path.basename(p)!='workspace':\n"
+            "  p=os.path.dirname(p)\n"
+            "QUOTA=5368709120\n"
+            "t=sum(os.path.getsize(os.path.join(d,f)) for d,_,fs in os.walk(p) for f in fs) if p and os.path.isdir(p) else 0\n"
+            "if t>QUOTA:\n"
+            "  print('工作空间存储配额已满（5GB），请先清理部分文件后再上传',file=sys.stderr)\n"
+            "  sys.exit(11)\n"
+        )
+        qr = container.exec_run(["python3", "-c", quota_script])
+        qe, _ = _exec_output(qr)
+        if qe == 11:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="工作空间存储配额已满（5GB），请先清理部分文件后再上传")
         _ensure_openclaw_compat_links(container)
         ok = container.put_archive(HERMES_DATA_ROOT, archive)
         chown_hermes_path(container, f"{HERMES_DATA_ROOT}/{upload_dir}")
