@@ -789,7 +789,7 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     else:
         providers.append({"name": "litellm", "base_url": settings.litellm_base_url.rstrip("/"), "api_key": user_row.litellm_api_key, "models": lm_models})
     existing_cfg["custom_providers"] = providers
-    if lm_models:
+    if lm_models and "model" not in existing_cfg:
         existing_cfg["model"] = {"default": lm_models[0]["id"], "provider": "litellm"}
     raw = yaml.safe_dump(existing_cfg, allow_unicode=True, sort_keys=False).encode("utf-8")
     buf = io.BytesIO()
