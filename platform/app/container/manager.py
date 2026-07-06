@@ -791,8 +791,11 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     existing_cfg["custom_providers"] = providers
     # 只在 litellm 是本次新添加的（原来不存在）时设置默认模型
     # 之后用户可能已在 AI 模型页面改过默认值，不再覆盖
-    if lm_models and not lm_existed:
-        existing_cfg["model"] = {"default": lm_models[0]["id"], "provider": "litellm"}
+    # 但如果当前默认模型不在新模型列表中（模型列表已变更），也需要更新
+    if lm_models:
+        _cur = (existing_cfg.get("model") or {}).get("default", "")
+        if not lm_existed or (_cur and _cur not in [m["id"] for m in lm_models]):
+            existing_cfg["model"] = {"default": lm_models[0]["id"], "provider": "litellm"}
     raw = yaml.safe_dump(existing_cfg, allow_unicode=True, sort_keys=False).encode("utf-8")
     # 如果配置没有实质性变化，跳过写盘
     if result.exit_code == 0 and raw == result.output:
