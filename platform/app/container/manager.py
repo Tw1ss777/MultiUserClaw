@@ -775,7 +775,6 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     except Exception:
         existing_cfg = {}
     providers = existing_cfg.get("custom_providers") or []
-    print(f"[seed-litellm] raw litellm_models={settings.litellm_models!r}")
     try:
         lm_models = json.loads(settings.litellm_models)
     except json.JSONDecodeError as je:
@@ -795,6 +794,9 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     if lm_models and not lm_existed:
         existing_cfg["model"] = {"default": lm_models[0]["id"], "provider": "litellm"}
     raw = yaml.safe_dump(existing_cfg, allow_unicode=True, sort_keys=False).encode("utf-8")
+    # 如果配置没有实质性变化，跳过写盘
+    if result.exit_code == 0 and raw == result.output:
+        return
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:
         info = tarfile.TarInfo(name="config.yaml"); info.size = len(raw); info.mode = 0o644
@@ -802,7 +804,6 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     buf.seek(0)
     container.put_archive("/opt/data", buf.read())
     container.exec_run(["chown", "hermes:hermes", "/opt/data/config.yaml"], user="root")
-    print(f"[seed-litellm] synced {len(lm_models)} models for user {user_id[:8]}")
 
 
 async def ensure_running(db: AsyncSession, user_id: str) -> Container:
