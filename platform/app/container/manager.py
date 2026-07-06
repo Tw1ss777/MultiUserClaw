@@ -782,6 +782,7 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
         print(f"[seed-litellm] JSON parse error: {je}")
         return
     lm_provider = next((p for p in providers if isinstance(p, dict) and p.get("name") == "litellm"), None)
+    lm_existed = lm_provider is not None
     if lm_provider:
         lm_provider["base_url"] = settings.litellm_base_url.rstrip("/")
         lm_provider["api_key"] = user_row.litellm_api_key
@@ -789,7 +790,9 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     else:
         providers.append({"name": "litellm", "base_url": settings.litellm_base_url.rstrip("/"), "api_key": user_row.litellm_api_key, "models": lm_models})
     existing_cfg["custom_providers"] = providers
-    if lm_models and "model" not in existing_cfg:
+    # 只在 litellm 是本次新添加的（原来不存在）时设置默认模型
+    # 之后用户可能已在 AI 模型页面改过默认值，不再覆盖
+    if lm_models and not lm_existed:
         existing_cfg["model"] = {"default": lm_models[0]["id"], "provider": "litellm"}
     raw = yaml.safe_dump(existing_cfg, allow_unicode=True, sort_keys=False).encode("utf-8")
     buf = io.BytesIO()
