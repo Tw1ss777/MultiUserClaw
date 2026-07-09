@@ -53,7 +53,6 @@
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent-blue">
             <Bot className="h-6 w-6 text-white" />
           </div>
-          <h1 className="text-xl font-semibold text-dark-text">OpenClaw AI</h1>
         </div>
 
         {/* Error */}

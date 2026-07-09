@@ -245,13 +245,6 @@ export default function AIModels() {
             )}
           </p>
         </div>
-        <button
-          onClick={() => setShowPicker(true)}
-          className="flex items-center gap-2 rounded-lg bg-accent-blue px-4 py-2 text-sm font-medium text-white hover:bg-accent-blue/90 transition-colors"
-        >
-          <Plus size={16} />
-          添加提供商
-        </button>
       </div>
 
       {error && (
@@ -373,13 +366,6 @@ export default function AIModels() {
         <div className="mb-8 rounded-xl border border-dark-border bg-dark-card px-4 py-16 text-center">
           <Key size={40} className="mx-auto mb-3 text-dark-text-secondary/50" />
           <p className="text-sm text-dark-text-secondary mb-3">尚未配置任何模型提供商</p>
-          <button
-            onClick={() => setShowPicker(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent-blue px-4 py-2 text-sm font-medium text-white hover:bg-accent-blue/90 transition-colors"
-          >
-            <Plus size={14} />
-            添加第一个提供商
-          </button>
         </div>
       )}
 
