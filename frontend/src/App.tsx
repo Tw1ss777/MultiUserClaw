@@ -22,10 +22,6 @@ import TerminalPage from './pages/Terminal'
 import { isLoggedIn } from './lib/api'
 import { ssoLogin } from './lib/api'
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
-  if (!isLoggedIn()) return <Navigate to={`/login${window.location.search}`} replace />
-  return <>{children}</>
-}
 
 export default function App() {
   const [ssoState, setSsoState] = useState<'idle' | 'loading'>('idle')
@@ -82,4 +78,21 @@ export default function App() {
       </Route>
     </Routes>
   )
+}
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  if (!isLoggedIn()) {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('hub_token')) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-dark-bg text-dark-text">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-blue border-t-transparent" />
+            <span className="text-sm text-dark-text-secondary">SSO 登录中...</span>
+          </div>
+        </div>
+      )
+    }
+    return <Navigate to={`/login${window.location.search}`} replace />
+  }
+  return <>{children}</>
 }
