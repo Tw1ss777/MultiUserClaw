@@ -33,13 +33,16 @@ export default function App() {
     const params = new URLSearchParams(window.location.search)
     const mode = params.get('mode')
     const hubToken = params.get('hub_token')
+    const originalPath = window.location.pathname
     if (mode) localStorage.setItem('ui_mode', mode)
     if (hubToken) {
       setSsoState('loading')
       localStorage.removeItem('openclaw_access_token')
       localStorage.removeItem('openclaw_refresh_token')
       ssoLogin(hubToken)
-        .then(() => { window.location.href = '/agents' })
+        .then(() => {
+          window.location.href = originalPath === '/' ? '/agents' : originalPath
+        })
         .catch(() => { setSsoState('idle') })
     }
   }, [])
@@ -74,6 +77,7 @@ export default function App() {
         <Route path="cron" element={<CronJobs />} />
         <Route path="nodes" element={<Nodes />} />
         <Route path="api" element={<ApiAccess />} />
+        <Route path="api-set" element={<ApiAccess />} />
         <Route path="settings" element={<SystemSettings />} />
       </Route>
     </Routes>

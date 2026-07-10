@@ -58,7 +58,7 @@ const navSections = [
       { to: '/sessions', icon: MessageSquare, label: '会话历史' },
       { to: '/cron', icon: Clock, label: '定时任务' },
       { to: '/nodes', icon: Monitor, label: 'Node 管理' },
-      { to: '/api', icon: Code2, label: 'API设定' },
+      { to: '/api-set', icon: Code2, label: 'API设定' },
       { to: '/settings', icon: Settings, label: '系统设置' },
     ],
   },

@@ -4,13 +4,14 @@ import TopBar from './TopBar'
 import { NotificationProvider } from './NotificationProvider'
 
 export default function Layout() {
+  const isPortal = window !== window.parent
   return (
     <NotificationProvider>
       <div className="flex h-screen overflow-hidden">
-        <Sidebar />
+        {!isPortal && <Sidebar />}
         <div className="flex flex-1 flex-col overflow-hidden">
-          <TopBar />
-          <main className="flex-1 overflow-y-auto p-6">
+          {!isPortal && <TopBar />}
+          <main className={`flex-1 overflow-y-auto ${isPortal ? 'p-4' : 'p-6'}`}>
             <Outlet />
           </main>
         </div>
