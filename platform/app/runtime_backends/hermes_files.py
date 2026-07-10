@@ -94,6 +94,19 @@ def normalize_hermes_upload_dir(target_dir: str | None, default: str = DEFAULT_H
     raw = raw.removeprefix("/root/.openclaw/")
     raw = raw.removeprefix("root/.openclaw/")
     raw = raw.removeprefix("/opt/data/")
+
+    # File manager paths (profiles/*) — allow upload to any path under profiles/
+    if raw.startswith("profiles/") or raw == "profiles":
+        normalized = posixpath.normpath(raw.strip("/"))
+        if normalized in {"", "."}:
+            normalized = default
+        if normalized == ".." or normalized.startswith("../"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Hermes upload path cannot escape /opt/data/profiles",
+            )
+        return normalized.rstrip("/")
+
     normalized = _normalize_profile_storage_path(raw or default)
     if normalized in {"", "."}:
         normalized = default
@@ -212,6 +225,7 @@ import posixpath
 import sys
 from datetime import datetime, timezone
 
+display_root = "/opt/data/profiles"
 root = "/opt/data"
 storage_path = sys.argv[1]
 target = os.path.realpath(os.path.join(root, storage_path))
@@ -254,7 +268,7 @@ if os.path.isdir(target):
     payload = {
         "type": "directory",
         "path": display_path(os.path.relpath(target, root).replace(os.sep, "/")),
-        "root": "/opt/data",
+        "root": display_root,
         "items": items,
         "runtime": "hermes",
     }
@@ -388,12 +402,18 @@ def write_hermes_filemanager_file(container_id_or_name: str | None, requested_pa
     try:
         _ensure_openclaw_compat_links(container)
         ok = container.put_archive(HERMES_DATA_ROOT, archive)
-        chown_hermes_path(container, f"{HERMES_DATA_ROOT}/{posixpath.dirname(storage_path)}")
+        chown_hermes_path(container, f"{HERMES_DATA_ROOT}/{upload_dir}")
     except DockerAPIError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write Hermes file") from exc
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write Hermes file")
-    return browse_hermes_filemanager(container_id_or_name, storage_path)
+    return {
+        "path": relative_path,
+        "name": stored_name,
+        "original_name": original_name,
+        "size": len(contents),
+        "content_type": file.content_type or "application/octet-stream",
+    }
 
 
 def delete_hermes_filemanager_path(container_id_or_name: str | None, requested_path: str | None) -> dict:
@@ -561,8 +581,10 @@ async def write_upload_to_hermes_container(
         quota_script = (
             "import os,sys\n"
             f"p='/opt/data/{upload_dir}'\n"
-            "while p and os.path.basename(p)!='workspace':\n"
+            "while p and p != '/' and os.path.basename(p)!='workspace':\n"
             "  p=os.path.dirname(p)\n"
+            "if p == '/' or not p:\n"
+            "  p = ''\n"
             "QUOTA=5368709120\n"
             "t=sum(os.path.getsize(os.path.join(d,f)) for d,_,fs in os.walk(p) for f in fs) if p and os.path.isdir(p) else 0\n"
             "if t>QUOTA:\n"
@@ -574,25 +596,14 @@ async def write_upload_to_hermes_container(
         if qe == 11:
             raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="工作空间存储配额已满（5GB），请先清理部分文件后再上传")
         _ensure_openclaw_compat_links(container)
+
+        _ensure_openclaw_compat_links(container)
         ok = container.put_archive(HERMES_DATA_ROOT, archive)
         chown_hermes_path(container, f"{HERMES_DATA_ROOT}/{upload_dir}")
-    except DockerNotFound as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Hermes runtime container is unavailable",
-        ) from exc
     except DockerAPIError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to write upload into Hermes workspace",
-        ) from exc
-
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write Hermes file") from exc
     if not ok:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to write upload into Hermes workspace",
-        )
-
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write Hermes file")
     return {
         "path": relative_path,
         "name": stored_name,
@@ -600,6 +611,129 @@ async def write_upload_to_hermes_container(
         "size": len(contents),
         "content_type": file.content_type or "application/octet-stream",
     }
+
+
+def delete_hermes_filemanager_path(container_id_or_name: str | None, requested_path: str | None) -> dict:
+    if not container_id_or_name:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Hermes runtime container is unavailable",
+        )
+    storage_path = normalize_hermes_filemanager_path(requested_path)
+    if storage_path.endswith("/workspace") or storage_path == "profiles/main/workspace":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete Hermes workspace root")
+    try:
+        container = get_docker_container(container_id_or_name)
+    except DockerNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Hermes runtime container is unavailable",
+        ) from exc
+#     absolute_path = f"{HERMES_DATA_ROOT}/{storage_path}"
+    # 文件路径调整至/opt/data删除知识库文件传绝对路径
+    if storage_path.startswith("/opt/data"):
+        absolute_path = storage_path
+    else:
+        absolute_path = f"{HERMES_DATA_ROOT}/{storage_path}"
+    result = container.exec_run(["sh", "-lc", f"rm -rf -- {shlex.quote(absolute_path)}"])
+    exit_code, output = _exec_output(result)
+    if exit_code != 0:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=output.decode("utf-8", errors="replace") or "Failed to delete Hermes path",
+        )
+    return {"ok": True, "path": storage_path, "runtime": "hermes"}
+
+
+def _legacy_script_fallback_path(container, requested_path: str) -> str | None:
+    if not requested_path.startswith("/scripts/"):
+        return None
+    rel_path = requested_path.removeprefix("/scripts/").strip("/")
+    normalized_rel = posixpath.normpath(rel_path)
+    if normalized_rel in {"", ".", ".."} or normalized_rel.startswith("../"):
+        return None
+
+    quoted_rel = shlex.quote(normalized_rel)
+    script = (
+        "rel="
+        f"{quoted_rel}; "
+        "for root in /opt/data/skills /workspace/skills /opt/data/openclaw_data/skills /opt/hermes/deploy_copy/skills; do "
+        "[ -d \"$root\" ] || continue; "
+        "find \"$root\" -path \"*/scripts/$rel\" -type f -print; "
+        "done | head -n 1"
+    )
+    result = container.exec_run(["sh", "-lc", script])
+    exit_code, output = _exec_output(result)
+    if exit_code != 0:
+        return None
+    candidate = output.decode("utf-8", errors="replace").splitlines()[0:1]
+    if not candidate:
+        return None
+    found = candidate[0].strip()
+    if not found.startswith(("/opt/data/skills/", "/workspace/skills/", "/opt/data/openclaw_data/skills/", "/opt/hermes/deploy_copy/skills/")):
+        return None
+    return found
+
+
+def _legacy_profile_fallback_path(archive_path: str) -> str | None:
+    prefix = f"{HERMES_DATA_ROOT}/profiles/"
+    if not archive_path.startswith(prefix):
+        return None
+    rel = archive_path[len(prefix):]
+    parts = rel.split("/", 3)
+    if len(parts) < 3 or parts[1] != "workspace":
+        return None
+    agent = parts[0]
+    tail = parts[2] if len(parts) == 3 else f"{parts[2]}/{parts[3]}"
+    if not agent or agent in {".", ".."} or "/" in agent:
+        return None
+    legacy_base = "workspace" if agent == "main" else f"workspace-{agent}"
+    return f"{HERMES_DATA_ROOT}/{legacy_base}/{tail}".rstrip("/")
+
+
+def _safe_filename(filename: str | None) -> str:
+    normalized = (filename or "upload.bin").replace("\\", "/").rsplit("/", 1)[-1].strip()
+    return normalized or "upload.bin"
+
+
+def _build_upload_archive(relative_path: str, contents: bytes) -> bytes:
+    tar_buffer = io.BytesIO()
+    now = int(time.time())
+    upload_dir = posixpath.dirname(relative_path)
+
+    with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
+        home_dir = tarfile.TarInfo(name="home")
+        home_dir.type = tarfile.DIRTYPE
+        home_dir.mode = 0o755
+        home_dir.mtime = now
+        tar.addfile(_mark_hermes_owned(home_dir))
+
+        openclaw_link = tarfile.TarInfo(name="home/.openclaw")
+        openclaw_link.type = tarfile.SYMTYPE
+        openclaw_link.linkname = HERMES_DATA_ROOT
+        openclaw_link.mode = 0o777
+        openclaw_link.mtime = now
+        tar.addfile(_mark_hermes_owned(openclaw_link))
+
+        current_dir = ""
+        for part in upload_dir.split("/"):
+            if not part:
+                continue
+            current_dir = f"{current_dir}/{part}" if current_dir else part
+            directory = tarfile.TarInfo(name=current_dir)
+            directory.type = tarfile.DIRTYPE
+            directory.mode = 0o755
+            directory.mtime = now
+            tar.addfile(_mark_hermes_owned(directory))
+
+        upload_file = tarfile.TarInfo(name=relative_path)
+        upload_file.size = len(contents)
+        upload_file.mode = 0o644
+        upload_file.mtime = now
+        tar.addfile(_mark_hermes_owned(upload_file), io.BytesIO(contents))
+
+    tar_buffer.seek(0)
+    return tar_buffer.read()
 
 
 def read_file_from_hermes_container(

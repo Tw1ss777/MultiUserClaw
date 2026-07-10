@@ -20,9 +20,10 @@ import {
   createDirectory,
 } from '../lib/api'
 import type { FileEntry, BrowseResult } from '../lib/api'
+const PROFILES_ROOT = 'profiles'
 
 export default function FileManager() {
-  const [currentPath, setCurrentPath] = useState('')
+  const [currentPath, setCurrentPath] = useState(PROFILES_ROOT)
   const [data, setData] = useState<BrowseResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -77,7 +78,7 @@ export default function FileManager() {
     }
   }
 
-  useEffect(() => { loadDir('') }, [])
+  useEffect(() => { loadDir(PROFILES_ROOT) }, [])
 
   const navigateTo = (dirPath: string) => {
     loadDir(dirPath)
@@ -86,6 +87,10 @@ export default function FileManager() {
   const goUp = () => {
     if (!currentPath) return
     const parent = currentPath.split('/').slice(0, -1).join('/')
+    if (!parent || parent === PROFILES_ROOT) {
+      navigateTo(PROFILES_ROOT)
+      return
+    }
     navigateTo(parent)
   }
 
@@ -143,7 +148,7 @@ export default function FileManager() {
     if (!newFolderName.trim()) return
     setError('')
     try {
-      const folderPath = currentPath ? `${currentPath}/${newFolderName.trim()}` : newFolderName.trim()
+      const folderPath = `${currentPath}/${newFolderName.trim()}`
       await createDirectory(folderPath)
       setShowNewFolder(false)
       setNewFolderName('')
@@ -201,7 +206,7 @@ export default function FileManager() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-dark-text">文件管理</h1>
         <p className="mt-1 text-sm text-dark-text-secondary">
-          浏览和管理 {data?.root || '~/.openclaw'} 目录
+          浏览和管理 /opt/data/profiles 目录
         </p>
       </div>
 
@@ -214,7 +219,7 @@ export default function FileManager() {
         {/* Breadcrumb */}
         <div className="flex items-center gap-1 text-sm">
           <button
-            onClick={() => navigateTo('')}
+            onClick={() => navigateTo(PROFILES_ROOT)}
             className="flex items-center gap-1 text-dark-text-secondary hover:text-accent-blue transition-colors"
           >
             <Home size={15} />
@@ -242,7 +247,7 @@ export default function FileManager() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          {currentPath && (
+          {currentPath !== PROFILES_ROOT && (
             <button
               onClick={goUp}
               className="flex items-center gap-1 rounded-lg border border-dark-border px-3 py-1.5 text-xs text-dark-text-secondary hover:text-dark-text transition-colors"
@@ -407,3 +412,4 @@ export default function FileManager() {
     </div>
   )
 }
+
