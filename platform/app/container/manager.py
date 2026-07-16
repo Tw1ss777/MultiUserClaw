@@ -769,11 +769,13 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     user_row = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user_row:
         return
+    result = None
     try:
         result = container.exec_run(["cat", "/opt/data/config.yaml"], user="hermes")
         existing_cfg = yaml.safe_load(result.output.decode("utf-8")) or {} if result.exit_code == 0 else {}
     except Exception:
-        existing_cfg = {}
+        # If we can't read the config, skip sync to avoid overwriting user's providers
+        return
     providers = existing_cfg.get("custom_providers") or []
     try:
         lm_models = json.loads(settings.litellm_models)
@@ -783,9 +785,9 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     lm_provider = next((p for p in providers if isinstance(p, dict) and p.get("name") == "litellm"), None)
     lm_existed = lm_provider is not None
     if lm_provider:
-        lm_provider["base_url"] = settings.litellm_base_url.rstrip("/")
-        lm_provider["api_key"] = user_row.litellm_api_key
-        lm_provider["models"] = lm_models
+        # litellm already exists — keep user's settings, only ensure models list matches
+        # (don't overwrite base_url/api_key the user may have changed in AI models page)
+        lm_provider["models"] = [m for m in lm_models if m not in (lm_provider.get("models") or [])] + (lm_provider.get("models") or [])
     else:
         providers.append({"name": "litellm", "base_url": settings.litellm_base_url.rstrip("/"), "api_key": user_row.litellm_api_key, "models": lm_models})
     existing_cfg["custom_providers"] = providers
@@ -798,7 +800,7 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
             existing_cfg["model"] = {"default": lm_models[0]["id"], "provider": "litellm"}
     raw = yaml.safe_dump(existing_cfg, allow_unicode=True, sort_keys=False).encode("utf-8")
     # 如果配置没有实质性变化，跳过写盘
-    if result.exit_code == 0 and raw == result.output:
+    if result is not None and result.exit_code == 0 and raw == result.output:
         return
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w") as tar:

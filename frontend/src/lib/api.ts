@@ -240,7 +240,15 @@ export async function fetchJSON<T>(
     throw new Error(await parseErrorMessage(res))
   }
 
-  return res.json() as Promise<T>
+  const raw: any = await res.json()
+  // Unwrap ai-hub TransformInterceptor format: {code, data, message}
+  if (raw && typeof raw === 'object' && 'code' in raw && 'data' in raw) {
+    if (raw.code !== 0) {
+      throw new Error(raw.message || 'Request failed')
+    }
+    return raw.data as T
+  }
+  return raw as T
 }
 
 // ---------------------------------------------------------------------------
