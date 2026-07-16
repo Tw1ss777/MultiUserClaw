@@ -570,7 +570,7 @@ async def write_upload_to_hermes_container(
 
     contents = await file.read()
     original_name = _safe_filename(file.filename)
-    stored_name = f"{int(time.time() * 1000)}-{original_name}"
+    stored_name = original_name
     upload_dir = normalize_hermes_upload_dir(target_dir)
     relative_path = f"{upload_dir}/{stored_name}"
     archive = _build_upload_archive(relative_path, contents)
