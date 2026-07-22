@@ -134,6 +134,7 @@ def _runtime_environment(container_token: str, sso_token: str | None, litellm_ap
         "NANOBOT_AGENTS__DEFAULTS__MODEL": settings.default_model,
         "TZ": settings.container_tz,
     }
+    env["PATH"] = "/opt/hermes/node_modules/.bin:/opt/hermes/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
     if _runtime_backend() == "openclaw":
         env["BRIDGE_ENABLE_CHANNELS"] = "1"
     else:
