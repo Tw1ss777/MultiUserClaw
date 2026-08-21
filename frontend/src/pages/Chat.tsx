@@ -18,6 +18,7 @@ import {
   Check,
 } from 'lucide-react'
 import MarkdownContent from '../components/MarkdownContent'
+import { setFileDownloadAgentId } from '../components/FileDownloadPlugin'
 import { useNotifications } from '../components/NotificationProvider'
 import {
   listSessions,
@@ -205,6 +206,9 @@ export default function Chat() {
   useEffect(() => {
     let cancelled = false
     const agentId = activeSessionKey ? getAgentIdFromKey(activeSessionKey) : undefined
+
+    // 同步文件下载插件使用的 agent id（workspace 路径映射到对应 agent 的 workspace）
+    setFileDownloadAgentId(agentId)
 
     const fetchSlashCommands = async () => {
       try {

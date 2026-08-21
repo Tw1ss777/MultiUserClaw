@@ -671,13 +671,16 @@ async def _proxy_file_request(request: Request, token: str, bridge_path: str):
     runtime_backend = (settings.dedicated_runtime_backend or "openclaw").strip().lower()
     if runtime_backend == "hermes":
         requested_path = request.query_params.get("path", "")
+        requested_agent = (request.query_params.get("agent") or request.query_params.get("agentId") or "main").strip()
+        if not requested_agent or requested_agent in {".", ".."}:
+            requested_agent = "main"
         normalized_path = requested_path
         if bridge_path == "filemanager/download" and requested_path and not requested_path.startswith("/"):
             normalized_path = normalize_hermes_filemanager_path(requested_path)
         if bridge_path in {"filemanager/serve", "filemanager/download"}:
             async with async_session() as db:
                 container = await ensure_running(db, user.id)
-            content, media_type = read_file_from_hermes_container(container.docker_id, normalized_path)
+            content, media_type = read_file_from_hermes_container(container.docker_id, normalized_path, requested_agent)
             headers = {}
             if media_type == "application/zip":
                 folder_name = normalized_path.rstrip("/").rsplit("/", 1)[-1] or "download"

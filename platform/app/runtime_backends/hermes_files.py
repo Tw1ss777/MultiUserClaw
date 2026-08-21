@@ -167,7 +167,7 @@ def normalize_hermes_filemanager_path(requested_path: str | None) -> str:
     return normalized
 
 
-def normalize_hermes_read_path(requested_path: str | None) -> str:
+def normalize_hermes_read_path(requested_path: str | None, default_agent: str = "main") -> str:
     raw = (requested_path or "").strip().replace("\\", "/")
     if not raw:
         raise HTTPException(
@@ -180,7 +180,7 @@ def normalize_hermes_read_path(requested_path: str | None) -> str:
     if raw.startswith("/"):
         normalized = posixpath.normpath(raw)
         if normalized == "/workspace" or normalized.startswith("/workspace/"):
-            return f"{HERMES_DATA_ROOT}/profiles/main{normalized}"
+            return f"{HERMES_DATA_ROOT}/profiles/{default_agent}{normalized}"
         if normalized.startswith("/workspace-"):
             return f"{HERMES_DATA_ROOT}/{_normalize_profile_storage_path(normalized)}"
         if (
@@ -206,6 +206,10 @@ def normalize_hermes_read_path(requested_path: str | None) -> str:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Hermes file path is unavailable",
             )
+        if normalized == "workspace" or normalized.startswith("workspace/"):
+            return f"{HERMES_DATA_ROOT}/profiles/{default_agent}/{normalized}"
+        if normalized.startswith("workspace-"):
+            return f"{HERMES_DATA_ROOT}/{_normalize_profile_storage_path(f'/{normalized}')}"
         return f"{HERMES_DATA_ROOT}/{normalized}"
     normalized = posixpath.normpath(raw)
     if normalized in {"", ".", ".."} or normalized.startswith("../"):
@@ -739,6 +743,7 @@ def _build_upload_archive(relative_path: str, contents: bytes) -> bytes:
 def read_file_from_hermes_container(
     container_id_or_name: str | None,
     requested_path: str | None,
+    default_agent: str = "main",
 ) -> tuple[bytes, str]:
     if not container_id_or_name:
         raise HTTPException(
@@ -746,7 +751,7 @@ def read_file_from_hermes_container(
             detail="Hermes runtime container is unavailable",
         )
 
-    archive_path = normalize_hermes_read_path(requested_path)
+    archive_path = normalize_hermes_read_path(requested_path, default_agent)
     try:
         container = get_docker_container(container_id_or_name)
     except DockerNotFound as exc:

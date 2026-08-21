@@ -58,6 +58,14 @@ export function isFilePath(href: string): boolean {
   return false
 }
 
+/** 当前会话所属的 agent id（由 Chat 页在切换会话时设置，默认 main） */
+let currentAgentId = 'main'
+
+/** 设置当前 agent id，用于将 workspace 路径映射到对应 agent 的 workspace */
+export function setFileDownloadAgentId(agentId: string | null | undefined) {
+  currentAgentId = agentId?.trim() || 'main'
+}
+
 /** 判断路径是否在 .openclaw 下（走 download API）还是绝对路径（走 serve API） */
 function isOpenclawPath(href: string): boolean {
   let decoded = href
@@ -116,13 +124,14 @@ function FileIcon({ ext }: { ext: string }) {
 
 /** 构建下载/预览 URL */
 function buildFileUrl(href: string, inline?: boolean): string {
+  const agentParam = `agent=${encodeURIComponent(currentAgentId)}`
   if (isOpenclawPath(href)) {
     const cleanPath = toDownloadPath(href)
-    return `/api/openclaw/filemanager/download?path=${encodeURIComponent(cleanPath)}`
+    return `/api/openclaw/filemanager/download?path=${encodeURIComponent(cleanPath)}&${agentParam}`
   }
   // 绝对路径 → serve API
   const decoded = decodePath(href)
-  let url = `/api/openclaw/filemanager/serve?path=${encodeURIComponent(decoded)}`
+  let url = `/api/openclaw/filemanager/serve?path=${encodeURIComponent(decoded)}&${agentParam}`
   if (inline) url += '&inline=1'
   return url
 }
