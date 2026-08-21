@@ -35,6 +35,10 @@ RUN if [ -n "${APT_DEBIAN_MIRROR}" ]; then \
     pip3 install --break-system-packages --no-cache-dir -i ${PIP_INDEX_URL} \
         requests pymupdf pdfplumber python-docx openpyxl python-pptx pandas xlrd odfpy python-magic chardet
 
+# Install Playwright browsers (Chromium for agent-browser skill)
+RUN pip3 install --break-system-packages --no-cache-dir -i ${PIP_INDEX_URL} playwright && \
+    npx playwright install --with-deps chromium --only-shell && \
+    npm cache clean --force
 WORKDIR /opt/hermes
 RUN npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 20000 && \
@@ -50,10 +54,15 @@ RUN if [ "$HERMES_INSTALL_WHATSAPP_BRIDGE" = "true" ]; then \
     fi
 
 # Copy source code (updates on top of base image)
-COPY --chown=hermes:hermes pyproject.toml requirements.txt ./
+COPY --chown=hermes:hermes pyproject.toml requirements.txt package.json package-lock.json* ./
 COPY --chown=hermes:hermes acp_adapter agent cron gateway hermes_cli plugins tools ./
 COPY --chown=hermes:hermes batch_runner.py cli.py hermes_constants.py hermes_logging.py hermes_state.py hermes_time.py model_tools.py rl_cli.py run_agent.py setup.py toolset_distributions.py toolsets.py trajectory_compressor.py utils.py ./
 
+# Install root npm dependencies (agent-browser CLI, Playwright)
+RUN npm install --prefer-offline --no-audit && \
+    pip3 install --break-system-packages --no-cache-dir -i ${PIP_INDEX_URL} playwright && \
+    npx playwright install --with-deps chromium --only-shell && \
+    npm cache clean --force
 RUN chown -R hermes:hermes /opt/hermes
 USER hermes
 RUN if [ ! -d /opt/hermes/.venv ]; then uv venv --seed /opt/hermes/.venv; fi && \
