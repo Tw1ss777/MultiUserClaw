@@ -15,7 +15,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Download, FileText, FileSpreadsheet, FileImage, File, Loader2, ZoomIn, ZoomOut, X, RotateCcw } from 'lucide-react'
-import { getAccessToken } from '../lib/api'
+import { getAccessToken, API_URL } from '../lib/api'
 
 // ---------------------------------------------------------------------------
 // 路径识别
@@ -127,11 +127,11 @@ function buildFileUrl(href: string, inline?: boolean): string {
   const agentParam = `agent=${encodeURIComponent(currentAgentId)}`
   if (isOpenclawPath(href)) {
     const cleanPath = toDownloadPath(href)
-    return `/api/openclaw/filemanager/download?path=${encodeURIComponent(cleanPath)}&${agentParam}`
+    return `${API_URL}/api/openclaw/filemanager/download?path=${encodeURIComponent(cleanPath)}&${agentParam}`
   }
   // 绝对路径 → serve API
   const decoded = decodePath(href)
-  let url = `/api/openclaw/filemanager/serve?path=${encodeURIComponent(decoded)}&${agentParam}`
+  let url = `${API_URL}/api/openclaw/filemanager/serve?path=${encodeURIComponent(decoded)}&${agentParam}`
   if (inline) url += '&inline=1'
   return url
 }

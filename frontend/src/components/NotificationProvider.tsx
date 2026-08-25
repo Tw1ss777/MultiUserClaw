@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { getAccessToken, getSession, listSessions } from '../lib/api'
+import { getAccessToken, getSession, listSessions, API_URL } from '../lib/api'
 
 export interface AppNotification {
   id: string
@@ -139,7 +139,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const token = getAccessToken()
     if (!token) return
 
-    const sse = new EventSource(`/api/openclaw/events/stream?token=${encodeURIComponent(token)}`)
+    const sse = new EventSource(`${API_URL}/api/openclaw/events/stream?token=${encodeURIComponent(token)}`)
 
     const handleFinal = async (rawSessionKey: string) => {
       const sessionKey = await resolveSessionKey(rawSessionKey)

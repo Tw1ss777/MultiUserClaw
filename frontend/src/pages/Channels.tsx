@@ -27,6 +27,7 @@ import {
   deleteChannelConfig,
   getAccessToken,
   listPlugins,
+  API_URL,
 } from '../lib/api'
 
 // Static channel catalog — only real OpenClaw-supported channels
@@ -762,7 +763,7 @@ function WeixinBindModal({ onClose, onBound }: WeixinBindModalProps) {
       }
 
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-      const wsUrl = `${proto}://${window.location.host}/api/openclaw/terminal/ws?token=${encodeURIComponent(token)}`
+      const wsUrl = `${proto}://${window.location.host}${API_URL}/api/openclaw/terminal/ws?token=${encodeURIComponent(token)}`
       nextWs = new WebSocket(wsUrl)
       const sessionKey = getWeixinTerminalSessionKey(token, attempt)
 

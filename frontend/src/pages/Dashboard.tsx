@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bot, Loader2, MessageSquare, Wrench } from 'lucide-react'
-import { getAccessToken, listSessions } from '../lib/api'
+import { getAccessToken, listSessions, API_URL } from '../lib/api'
 import { fetchAgents, fetchDashboardStats } from '../store/agents'
 import type { BackendAgent, DashboardStats } from '../types/agent'
 
@@ -99,7 +99,7 @@ export default function Dashboard() {
     const token = getAccessToken()
     if (!token) return
 
-    const sse = new EventSource(`/api/openclaw/events/stream?token=${encodeURIComponent(token)}`)
+    const sse = new EventSource(`${API_URL}/api/openclaw/events/stream?token=${encodeURIComponent(token)}`)
 
     sse.onmessage = evt => {
       try {

@@ -19,8 +19,7 @@ import ApiAccess from './pages/ApiAccess'
 import Nodes from './pages/Nodes'
 import Plugins from './pages/Plugins'
 import TerminalPage from './pages/Terminal'
-import { isLoggedIn } from './lib/api'
-import { ssoLogin } from './lib/api'
+import { isLoggedIn, getAccessToken, ssoLogin, APP_BASE } from './lib/api'
 
 
 export default function App() {
@@ -32,14 +31,39 @@ export default function App() {
     const originalPath = window.location.pathname
     if (mode) localStorage.setItem('ui_mode', mode)
     if (hubToken) {
+      const routePath = APP_BASE && originalPath.startsWith(APP_BASE)
+        ? originalPath.slice(APP_BASE.length) || '/'
+        : originalPath
+      const redirectPath = APP_BASE + (routePath === '/' || routePath === '/agent' ? '/dashboard' : routePath)
+      // 解码 hub_token 的 sub（AI Hub 用户 id），仅用于判断是否需要重新 SSO，安全校验由后端 sso 接口完成
+      let hubUserId = ''
+      try {
+        const payload = JSON.parse(
+          atob(hubToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')),
+        )
+        hubUserId = payload.sub || ''
+      } catch { /* 解码失败则强制重新 SSO */ }
+      const lastHubUserId = localStorage.getItem('openclaw_hub_user_id')
+      if (hubUserId && lastHubUserId === hubUserId && getAccessToken()) {
+        // 与本地 token 属于同一用户：跳过重复 SSO，仅从 URL 移除敏感参数
+        const clean = new URL(window.location.href)
+        clean.searchParams.delete('hub_token')
+        window.history.replaceState(history.state, '', clean.toString())
+        return
+      }
       setSsoState('loading')
       localStorage.removeItem('openclaw_access_token')
       localStorage.removeItem('openclaw_refresh_token')
       ssoLogin(hubToken)
         .then(() => {
-          window.location.href = originalPath === '/' ? '/agents' : originalPath
+          if (hubUserId) localStorage.setItem('openclaw_hub_user_id', hubUserId)
+          window.location.href = redirectPath
         })
-        .catch(() => { setSsoState('idle') })
+        .catch(() => {
+          setSsoState('idle')
+          // SSO 失败：回退到应用自己的登录页，避免卡在加载界面
+          window.location.href = `${APP_BASE}/login`
+        })
     }
   }, [])
   if (ssoState === 'loading') {

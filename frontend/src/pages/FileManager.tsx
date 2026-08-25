@@ -18,6 +18,7 @@ import {
   uploadFile,
   deleteFile,
   createDirectory,
+  API_URL,
 } from '../lib/api'
 import type { FileEntry, BrowseResult } from '../lib/api'
 const PROFILES_ROOT = 'profiles'
@@ -129,7 +130,7 @@ export default function FileManager() {
 
   const handleDownload = async (entry: FileEntry) => {
     const token = localStorage.getItem('openclaw_access_token')
-    const url = `/api/openclaw/filemanager/download?path=${encodeURIComponent(entry.path)}`
+    const url = `${API_URL}/api/openclaw/filemanager/download?path=${encodeURIComponent(entry.path)}`
     const headers: Record<string, string> = {}
     if (token) headers['Authorization'] = `Bearer ${token}`
 

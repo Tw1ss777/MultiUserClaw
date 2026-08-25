@@ -20,7 +20,7 @@
     if (hubToken && !isLoggedIn()) {
       setLoading(true)
       ssoLogin(hubToken)
-        .then(() => navigate('/agents', { replace: true }))
+        .then(() => navigate('/dashboard', { replace: true }))
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false))
     }

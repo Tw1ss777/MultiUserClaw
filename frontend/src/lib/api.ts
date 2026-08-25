@@ -1,7 +1,10 @@
 // API client for OpenClaw Platform Gateway (multi-tenant mode)
 
+// App base path (e.g. /agents/grzs) so API/asset URLs work behind a path-prefixed reverse proxy
+export const APP_BASE = import.meta.env.BASE_URL.replace(/\/+$/, '')
+
 // Always use relative URL to go through Vite proxy, avoiding CORS preflight
-const API_URL = ''
+export const API_URL = APP_BASE
 
 // ---------------------------------------------------------------------------
 // Types
@@ -231,7 +234,7 @@ export async function fetchJSON<T>(
       res = await fetch(`${API_URL}${path}`, { ...options, headers })
     } else {
       clearTokens()
-      window.location.href = '/login'
+      window.location.href = `${APP_BASE}/login`
       throw new Error('Session expired')
     }
   }
@@ -291,7 +294,7 @@ export async function ssoLogin(infoxToken: string): Promise<TokenResponse> {
 
 export function logout(): void {
   clearTokens()
-  window.location.href = '/login'
+  window.location.href = `${APP_BASE}/login`
 }
 
 export async function getMe(): Promise<AuthUser> {
@@ -458,7 +461,7 @@ export function getRunEventsStreamUrl(runId: string): string {
   const params = new URLSearchParams()
   if (token) params.set('token', token)
   const suffix = params.toString()
-  return `/api/openclaw/runs/${encodeURIComponent(runId)}/events${suffix ? `?${suffix}` : ''}`
+  return `${API_URL}/api/openclaw/runs/${encodeURIComponent(runId)}/events${suffix ? `?${suffix}` : ''}`
 }
 
 export async function uploadFileToWorkspace(

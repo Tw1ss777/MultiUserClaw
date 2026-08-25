@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, Monitor, Plug, PlugZap, TerminalSquare, Trash2 } from 'lucide-react'
-import { getAccessToken } from '../lib/api'
+import { getAccessToken, API_URL } from '../lib/api'
 
 function base64UrlDecode(value: string): string {
   const base = value.replace(/-/g, '+').replace(/_/g, '/')
@@ -59,7 +59,7 @@ export default function TerminalPage() {
     }
 
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const wsUrl = `${proto}://${window.location.host}/api/openclaw/terminal/ws?token=${encodeURIComponent(token)}`
+    const wsUrl = `${proto}://${window.location.host}${API_URL}/api/openclaw/terminal/ws?token=${encodeURIComponent(token)}`
     const ws = new WebSocket(wsUrl)
     const sessionKey = getTerminalSessionKey(token)
     connectingRef.current = true
