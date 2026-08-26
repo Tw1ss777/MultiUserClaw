@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import secrets
@@ -33,13 +34,14 @@ def get_docker_container(container_id_or_name: str) -> docker.models.containers.
     return _docker().containers.get(container_id_or_name)
 
 
-def _ensure_network() -> None:
+async def _ensure_network() -> None:
     """Create the internal Docker network if it doesn't exist."""
     client = _docker()
     try:
-        client.networks.get(settings.container_network)
+        await asyncio.to_thread(client.networks.get, settings.container_network)
     except DockerNotFound:
-        client.networks.create(
+        await asyncio.to_thread(
+            client.networks.create,
             settings.container_network,
             driver="bridge",
             internal=False,  # allow internet access for tool downloads
@@ -57,10 +59,11 @@ def _published_binding(container: docker.models.containers.Container, container_
     return host_ip, host_port
 
 
-def _is_host_port_in_use(client: docker.DockerClient, host_port: int) -> bool:
+async def _is_host_port_in_use(client: docker.DockerClient, host_port: int) -> bool:
     """Return True if any container currently publishes the given host port."""
     port_str = str(host_port)
-    for c in client.containers.list(all=True):
+    containers = await asyncio.to_thread(client.containers.list, all=True)
+    for c in containers:
         ports = c.attrs.get("NetworkSettings", {}).get("Ports", {}) or {}
         for bindings in ports.values():
             for binding in (bindings or []):
@@ -307,7 +310,7 @@ def _apply_openclaw_model_config(config: dict, default_model: str) -> bool:
     return changed
 
 
-def _write_openclaw_model_config(container: docker.models.containers.Container) -> None:
+async def _write_openclaw_model_config(container: docker.models.containers.Container) -> None:
     target_model = _platform_proxy_model_ref(settings.default_model)
     if not target_model:
         return
@@ -358,13 +361,13 @@ else:
 config_path.parent.mkdir(parents=True, exist_ok=True)
 config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 """
-    result = container.exec_run(["python3", "-c", script, target_model])
+    result = await asyncio.to_thread(container.exec_run, ["python3", "-c", script, target_model])
     if result.exit_code != 0:
         output = result.output.decode("utf-8", errors="replace") if result.output else ""
         raise RuntimeError(f"failed to patch OpenClaw model config: {output}")
 
 
-def _write_runtime_metadata(container: docker.models.containers.Container, markdown: str) -> None:
+async def _write_runtime_metadata(container: docker.models.containers.Container, markdown: str) -> None:
     content = markdown.encode("utf-8")
     tar_buffer = io.BytesIO()
     with tarfile.open(fileobj=tar_buffer, mode="w") as tar:
@@ -381,12 +384,12 @@ def _write_runtime_metadata(container: docker.models.containers.Container, markd
         tar.addfile(metadata_file, io.BytesIO(content))
 
     tar_buffer.seek(0)
-    ok = container.put_archive("/", tar_buffer.read())
+    ok = await asyncio.to_thread(container.put_archive, "/", tar_buffer.read())
     if not ok:
         raise RuntimeError("failed to write platform-runtime.json into container workspace")
 
 
-def _repair_hermes_data_ownership(container: docker.models.containers.Container) -> None:
+async def _repair_hermes_data_ownership(container: docker.models.containers.Container) -> None:
     """Make files injected into the Hermes data volume writable by the hermes user."""
     data_volume = ""
     for mount in container.attrs.get("Mounts", []) or []:
@@ -395,7 +398,8 @@ def _repair_hermes_data_ownership(container: docker.models.containers.Container)
             break
 
     if data_volume:
-        _docker().containers.run(
+        await asyncio.to_thread(
+            _docker().containers.run,
             image=_runtime_image(),
             entrypoint="chown",
             command=["-R", "hermes:hermes", "/opt/data"],
@@ -404,7 +408,9 @@ def _repair_hermes_data_ownership(container: docker.models.containers.Container)
         )
         return
 
-    result = container.exec_run(["chown", "-R", "hermes:hermes", "/opt/data"], user="root")
+    result = await asyncio.to_thread(
+        container.exec_run, ["chown", "-R", "hermes:hermes", "/opt/data"], user="root"
+    )
     exit_code = getattr(result, "exit_code", result[0] if isinstance(result, tuple) else 0)
     if exit_code != 0:
         output = getattr(result, "output", result[1] if isinstance(result, tuple) and len(result) > 1 else b"")
@@ -413,10 +419,12 @@ def _repair_hermes_data_ownership(container: docker.models.containers.Container)
         raise RuntimeError(f"failed to repair Hermes data ownership: {output}")
 
 
-def _read_existing_hermes_config(container: docker.models.containers.Container) -> dict:
+async def _read_existing_hermes_config(container: docker.models.containers.Container) -> dict:
     """Read existing config.yaml from container, return {} if not found."""
     try:
-        result = container.exec_run(["cat", "/opt/data/config.yaml"], user="root")
+        result = await asyncio.to_thread(
+            container.exec_run, ["cat", "/opt/data/config.yaml"], user="root"
+        )
         if result.exit_code == 0 and result.output:
             return yaml.safe_load(result.output.decode("utf-8")) or {}
     except Exception:
@@ -424,9 +432,9 @@ def _read_existing_hermes_config(container: docker.models.containers.Container) 
     return {}
 
 
-def _write_hermes_runtime_files(container: docker.models.containers.Container) -> None:
+async def _write_hermes_runtime_files(container: docker.models.containers.Container) -> None:
     platform_config = yaml.safe_load(_build_hermes_config_yaml()) or {}
-    existing_config = _read_existing_hermes_config(container)
+    existing_config = await _read_existing_hermes_config(container)
 
     if existing_config.get("custom_providers"):
         user_providers = [
@@ -466,10 +474,10 @@ def _write_hermes_runtime_files(container: docker.models.containers.Container) -
         tar.addfile(env_file, io.BytesIO(env_content))
 
     tar_buffer.seek(0)
-    ok = container.put_archive("/opt/data", tar_buffer.read())
+    ok = await asyncio.to_thread(container.put_archive, "/opt/data", tar_buffer.read())
     if not ok:
         raise RuntimeError("failed to write Hermes config.yaml/.env into container data volume")
-    _repair_hermes_data_ownership(container)
+    await _repair_hermes_data_ownership(container)
 
 
 def _build_expose_port_skill_markdown(
@@ -541,7 +549,7 @@ def _build_expose_port_skill_markdown(
     return "\n".join(lines)
 
 
-def _write_expose_port_skill(container: docker.models.containers.Container, markdown: str) -> None:
+async def _write_expose_port_skill(container: docker.models.containers.Container, markdown: str) -> None:
     """Write /root/.openclaw/workspace/skills/container-expose-info/SKILL.md via put_archive."""
     content = markdown.encode("utf-8")
     tar_buffer = io.BytesIO()
@@ -571,7 +579,7 @@ def _write_expose_port_skill(container: docker.models.containers.Container, mark
         tar.addfile(skill_file, io.BytesIO(content))
 
     tar_buffer.seek(0)
-    ok = container.put_archive("/root/.openclaw", tar_buffer.read())
+    ok = await asyncio.to_thread(container.put_archive, "/root/.openclaw", tar_buffer.read())
     if not ok:
         raise RuntimeError("failed to write container-expose-info SKILL.md into container")
 
@@ -654,7 +662,7 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
     record = await get_container(db, user_id)
 
     # Now safe to create Docker resources — we hold the DB slot.
-    _ensure_network()
+    await _ensure_network()
     client = _docker()
 
     data_vol = _data_volume_name(short_id)
@@ -662,8 +670,8 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
 
     # Remove any stale container with the same name
     try:
-        stale = client.containers.get(container_name)
-        stale.remove(force=True)
+        stale = await asyncio.to_thread(client.containers.get, container_name)
+        await asyncio.to_thread(stale.remove, force=True)
     except DockerNotFound:
         pass
 
@@ -696,21 +704,25 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
         preferred_service_port = binding.host_port_service if binding is not None else None
 
         preferred_ports = _runtime_preferred_ports(preferred_browser_port, preferred_service_port)
-        preferred_usable = preferred_ports is not None and all(
-            not _is_host_port_in_use(client, host_port)
-            for _container_port, (_host_ip, host_port) in preferred_ports.items()
-            if host_port is not None
-        )
+        if preferred_ports is not None:
+            usable = True
+            for _container_port, (_host_ip, host_port) in preferred_ports.items():
+                if host_port is not None and await _is_host_port_in_use(client, host_port):
+                    usable = False
+                    break
+        else:
+            usable = False
+        preferred_usable = preferred_ports is not None and usable
 
         run_kwargs["ports"] = preferred_ports if preferred_usable else _runtime_published_ports()
 
     try:
-        docker_container = client.containers.run(**run_kwargs)
+        docker_container = await asyncio.to_thread(client.containers.run, **run_kwargs)
     except DockerAPIError as exc:
         # Preferred ports can race with other creators; fallback to random publish.
         if settings.user_container_publish_ports and "port is already allocated" in str(exc).lower():
             run_kwargs["ports"] = _runtime_published_ports()
-            docker_container = client.containers.run(**run_kwargs)
+            docker_container = await asyncio.to_thread(client.containers.run, **run_kwargs)
         else:
             await db.rollback()
             raise
@@ -719,49 +731,65 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
         await db.rollback()
         raise
 
-    # Read container IP on the internal network
-    docker_container.reload()
-    browser_binding, service_binding = _published_port_bindings(docker_container)
-    if runtime_backend == "openclaw":
-        _write_openclaw_model_config(docker_container)
-        expose_markdown = _build_expose_port_skill_markdown(
-            user_id=user_id,
-            container_name=container_name,
-            browser_binding=browser_binding,
-            service_binding=service_binding,
-            public_base_url=settings.public_base_url,
-        )
-        _write_expose_port_skill(docker_container, expose_markdown)
-    else:
-        runtime_metadata = _build_runtime_metadata_markdown(
-            user_id=user_id,
-            container_name=container_name,
-            runtime_backend=runtime_backend,
-        )
-        _write_runtime_metadata(docker_container, runtime_metadata)
-        _write_hermes_runtime_files(docker_container)
-        # Sync LiteLLM provider config (reads latest from settings)
-        try:
-            await _sync_litellm_config(db, user_id, docker_container)
-        except Exception as e:
-            print(f"[seed-litellm] ERROR: {e}")
+    # ── post-creation steps (may fail if container is still booting) ──
+    try:
+        # Read container IP on the internal network
+        docker_container.reload()
+        browser_binding, service_binding = _published_port_bindings(docker_container)
+        if runtime_backend == "openclaw":
+            await _write_openclaw_model_config(docker_container)
+            expose_markdown = _build_expose_port_skill_markdown(
+                user_id=user_id,
+                container_name=container_name,
+                browser_binding=browser_binding,
+                service_binding=service_binding,
+                public_base_url=settings.public_base_url,
+            )
+            await _write_expose_port_skill(docker_container, expose_markdown)
+        else:
+            runtime_metadata = _build_runtime_metadata_markdown(
+                user_id=user_id,
+                container_name=container_name,
+                runtime_backend=runtime_backend,
+            )
+            await _write_runtime_metadata(docker_container, runtime_metadata)
+            await _write_hermes_runtime_files(docker_container)
+            # Sync LiteLLM provider config (reads latest from settings)
+            try:
+                await _sync_litellm_config(db, user_id, docker_container)
+            except Exception as e:
+                print(f"[seed-litellm] ERROR: {e}")
 
-    network_settings = docker_container.attrs["NetworkSettings"]["Networks"]
-    internal_ip = network_settings.get(settings.container_network, {}).get("IPAddress", "")
+        network_settings = docker_container.attrs["NetworkSettings"]["Networks"]
+        internal_ip = network_settings.get(settings.container_network, {}).get("IPAddress", "")
 
-    record.docker_id = docker_container.id
-    record.status = "running"
-    record.internal_host = internal_ip
-    await upsert_user_port_binding(
-        db=db,
-        user_id=user_id,
-        host_bind_ip=browser_binding[0] or service_binding[0] or settings.user_container_bind_ip,
-        host_port_browser=int(browser_binding[1]) if browser_binding[1] else None,
-        host_port_service=int(service_binding[1]) if service_binding[1] else None,
-    )
-    await db.commit()
-    await db.refresh(record)
-    return record
+        record.docker_id = docker_container.id
+        record.status = "running"
+        record.internal_host = internal_ip
+        await upsert_user_port_binding(
+            db=db,
+            user_id=user_id,
+            host_bind_ip=browser_binding[0] or service_binding[0] or settings.user_container_bind_ip,
+            host_port_browser=int(browser_binding[1]) if browser_binding[1] else None,
+            host_port_service=int(service_binding[1]) if service_binding[1] else None,
+        )
+        await db.commit()
+        await db.refresh(record)
+        return record
+    except Exception:
+        # Post-creation steps failed, but container is already running.
+        # Mark it as running anyway so it doesn't get stuck in "creating" forever.
+        docker_container.reload()
+        record.docker_id = docker_container.id
+        if docker_container.status == "running":
+            record.status = "running"
+            record.internal_host = ""
+            await db.commit()
+            await db.refresh(record)
+            print(f"[container] post-creation failed for {user_id[:8]}, marked running anyway")
+        else:
+            await db.rollback()
+        raise
 
 
 async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker.models.containers.Container) -> None:
@@ -772,7 +800,9 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
         return
     result = None
     try:
-        result = container.exec_run(["cat", "/opt/data/config.yaml"], user="hermes")
+        result = await asyncio.to_thread(
+            container.exec_run, ["cat", "/opt/data/config.yaml"], user="hermes"
+        )
         existing_cfg = yaml.safe_load(result.output.decode("utf-8")) or {} if result.exit_code == 0 else {}
     except Exception:
         # If we can't read the config, skip sync to avoid overwriting user's providers
@@ -808,13 +838,12 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
         info = tarfile.TarInfo(name="config.yaml"); info.size = len(raw); info.mode = 0o644
         tar.addfile(info, io.BytesIO(raw))
     buf.seek(0)
-    container.put_archive("/opt/data", buf.read())
-    container.exec_run(["chown", "hermes:hermes", "/opt/data/config.yaml"], user="root")
+    await asyncio.to_thread(container.put_archive, "/opt/data", buf.read())
+    await asyncio.to_thread(container.exec_run, ["chown", "hermes:hermes", "/opt/data/config.yaml"], user="root")
 
 
 async def ensure_running(db: AsyncSession, user_id: str) -> Container:
     """Return a running container for the user, creating or unpausing as needed."""
-    import asyncio
 
     record = await get_container(db, user_id)
 
@@ -829,6 +858,23 @@ async def ensure_running(db: AsyncSession, user_id: str) -> Container:
 
     # Another request is still creating the container — wait for it
     if record.status == "creating":
+        # Fast-recovery: if the container is already running but DB wasn't updated
+        # (e.g. post-creation steps failed after the container started),
+        # fix the status immediately instead of waiting 60s.
+        client = _docker()
+        container_name = _container_name(user_id[:8])
+        try:
+            c = client.containers.get(container_name)
+            if c.status == "running":
+                record.docker_id = c.id
+                record.status = "running"
+                record.internal_host = ""
+                await db.commit()
+                await db.refresh(record)
+                return record
+        except DockerNotFound:
+            pass
+
         for _ in range(30):  # wait up to 60s
             await asyncio.sleep(2)
             await db.expire(record)
