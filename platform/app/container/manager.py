@@ -658,8 +658,11 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
         # Another request already claimed this user_id — not an error
         return None
 
-    await db.flush()
-    record = await get_container(db, user_id)
+    container_id = row.id
+    # Commit immediately to release the unique-index transactionid lock.
+    # Docker operations below may take minutes; holding the lock across
+    # them blocks every subsequent INSERT for the same user_id.
+    await db.commit()
 
     # Now safe to create Docker resources — we hold the DB slot.
     await _ensure_network()
@@ -763,6 +766,10 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
         network_settings = docker_container.attrs["NetworkSettings"]["Networks"]
         internal_ip = network_settings.get(settings.container_network, {}).get("IPAddress", "")
 
+        # Re-fetch the record in a new transaction — the first one was committed
+        # before Docker operations to avoid holding the transactionid lock.
+        record_result = await db.execute(select(Container).where(Container.id == container_id))
+        record = record_result.scalar_one()
         record.docker_id = docker_container.id
         record.status = "running"
         record.internal_host = internal_ip
@@ -780,6 +787,8 @@ async def create_container(db: AsyncSession, user_id: str) -> Container | None:
         # Post-creation steps failed, but container is already running.
         # Mark it as running anyway so it doesn't get stuck in "creating" forever.
         docker_container.reload()
+        record_result = await db.execute(select(Container).where(Container.id == container_id))
+        record = record_result.scalar_one()
         record.docker_id = docker_container.id
         if docker_container.status == "running":
             record.status = "running"
@@ -877,7 +886,7 @@ async def ensure_running(db: AsyncSession, user_id: str) -> Container:
 
         for _ in range(30):  # wait up to 60s
             await asyncio.sleep(2)
-            await db.expire(record)
+            db.expire(record)
             record = await get_container(db, user_id)
             if record is None or record.status != "creating":
                 break
