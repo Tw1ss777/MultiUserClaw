@@ -280,6 +280,15 @@ def _hermes_build_arg_flags(with_browser: bool) -> list[str]:
     return flags
 
 
+def _hermes_base_build_command(*, use_cache: bool = False) -> str:
+    """构建 hermes-base 基础镜像（Dockerfile.bridge 的 FROM 依赖）。"""
+    parts = ["docker build"]
+    if not use_cache:
+        parts.append("--no-cache")
+    parts.extend(["-t", "hermes-base:latest", "hermes-agent/"])
+    return " ".join(parts)
+
+
 def _hermes_build_command(*, use_cache: bool = False, with_browser: bool = False) -> str:
     parts = ["docker build"]
     if not use_cache:
@@ -292,7 +301,13 @@ def _hermes_build_command(*, use_cache: bool = False, with_browser: bool = False
             "hermes-agent/",
         ]
     )
-    return " ".join(parts)
+    bridge = " ".join(parts)
+    # Dockerfile.bridge 基于 hermes-base:latest；本地缺失时 Docker 会尝试从
+    # docker.io 拉取导致内网 pull access denied，因此先确保基础镜像存在。
+    return (
+        "if ! docker image inspect hermes-base:latest >/dev/null 2>&1; then "
+        f"{_hermes_base_build_command(use_cache=use_cache)}; fi && {bridge}"
+    )
 
 
 def build_hermes_image(*, with_browser: bool = False):
@@ -527,6 +542,7 @@ def main():
         # 同步 deploy_copy
         sync_deploy_copy_to_bridge()
         sync_deploy_copy_to_hermes()
+        sync_deploy_copy_to_platform()
 
         if "openclaw" in services:
             warn("当前 hermes 分支默认不再重建 openclaw 基础镜像，已忽略 openclaw 关键字")
