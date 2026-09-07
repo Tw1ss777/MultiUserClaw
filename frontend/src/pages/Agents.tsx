@@ -4,6 +4,10 @@ import { Bot, Plus, Search, Loader2 } from 'lucide-react'
 import { fetchAgents, removeAgent } from '../store/agents'
 import type { BackendAgent } from '../types/agent'
 
+// 固定置顶的通用 Agent（对应平台默认 agent id: main）
+const GENERAL_AGENT_ID = 'main'
+const GENERAL_AGENT_NAME = 'Assistant'
+
 export default function Agents() {
   const navigate = useNavigate()
   const [agents, setAgents] = useState<BackendAgent[]>([])
@@ -21,6 +25,10 @@ export default function Agents() {
     const name = a.name || a.identity?.name || a.id || ''
     return name.toLowerCase().includes(term) || (a.id || '').toLowerCase().includes(term)
   })
+
+  // 通用 Agent 固定置顶展示，下方网格排除它避免重复
+  const generalAgent = agents.find(a => a.id === GENERAL_AGENT_ID)
+  const gridAgents = filtered.filter(a => a.id !== GENERAL_AGENT_ID)
 
   const handleStartChat = (agentId: string) => {
     const sessionKey = `agent:${agentId}:session-${Date.now()}`
@@ -68,9 +76,57 @@ export default function Agents() {
         </div>
       </div>
 
+      {/* 固定通用 Agent（始终置顶，不受搜索与新增影响） */}
+      <div className="mb-6">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="h-3.5 w-1 rounded-full bg-accent-blue" />
+          <h2 className="text-sm font-semibold text-dark-text">通用 AI Agents</h2>
+          <span className="text-xs text-dark-text-secondary">固定入口，点击直接开始对话</span>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+        <div
+          className="rounded-xl border border-accent-blue/40 bg-dark-card p-5 hover:border-accent-blue/60 transition-colors cursor-pointer"
+          onClick={() => handleStartChat(GENERAL_AGENT_ID)}
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-dark-bg">
+                {generalAgent?.identity?.emoji ? (
+                  <span className="text-lg">{generalAgent.identity.emoji}</span>
+                ) : (
+                  <Bot size={20} className="text-accent-blue" />
+                )}
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-dark-text">{GENERAL_AGENT_NAME}</div>
+                <div className="text-xs text-dark-text-secondary">{GENERAL_AGENT_ID}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center justify-end gap-3">
+            <button
+              onClick={e => {
+                e.stopPropagation()
+                navigate(`/agents/${GENERAL_AGENT_ID}`)
+              }}
+              className="text-xs text-dark-text-secondary hover:text-dark-text"
+            >
+              详情
+            </button>
+          </div>
+        </div>
+        </div>
+      </div>
+
       {/* Agent Cards Grid */}
+      <div className="mb-3 flex items-center gap-2">
+        <span className="h-3.5 w-1 rounded-full bg-accent-blue/50" />
+        <h2 className="text-sm font-semibold text-dark-text">个性化 AI Agents</h2>
+        <span className="rounded-full bg-dark-card px-2 py-0.5 text-xs text-dark-text-secondary">{gridAgents.length}</span>
+      </div>
       <div className="grid grid-cols-3 gap-4">
-        {filtered.map(agent => (
+        {gridAgents.map(agent => (
           <div
             key={agent.id}
             className="rounded-xl border border-dark-border bg-dark-card p-5 hover:border-accent-blue/30 transition-colors cursor-pointer"
