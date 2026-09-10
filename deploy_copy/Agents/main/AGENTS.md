@@ -18,8 +18,7 @@
 当任务需要团队协作时，调度 **manager**（经理）去处理。manager 会根据任务性质分配给：
 
 - **programmer** — 全栈工程师
-- **researcher** — 资深研究员
-- **hr** — 人力资源顾问
+- **insurance-analyze-counselor** — 保险需求分析顾问：通过分阶段问答梳理业务需求，产出规范的需求文档
 
 **注意：** 你不直接调度下级 Agent，你只需要把任务交给 manager，由 manager 去分配。
 
