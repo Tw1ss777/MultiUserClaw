@@ -8,6 +8,10 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql+asyncpg://nanobot:nanobot@localhost:5432/nanobot_platform"
+    # Connection pool (per uvicorn worker! total = workers × (pool_size + max_overflow))
+    db_pool_size: int = 20
+    db_max_overflow: int = 20
+    db_pool_timeout: int = 30
 
     # JWT
     jwt_secret: str = "change-me-in-production"
@@ -119,6 +123,17 @@ class Settings(BaseSettings):
 
     # SSO: ai-hub verification endpoint base URL
     aihub_base_url: str = "http://localhost:3000/agents/hub_api"
+
+    # Email notification (cron job completion → user email), disabled by default
+    enable_email_notification: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_pass: str = ""
+    smtp_from: str = ""  # defaults to smtp_user when empty
+    smtp_use_ssl: bool = True  # True for 465 (SMTP_SSL); False for 25/587 (STARTTLS)
+    # 收件人覆盖：非空时所有通知邮件统一发给该地址；为空时发给任务主人自己的邮箱
+    notify_override_email: str = ""
 
     # LiteLLM proxy: injected into user containers as env vars
     litellm_base_url: str = "http://host.docker.internal:4000"
