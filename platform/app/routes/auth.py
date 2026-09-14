@@ -154,10 +154,11 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
     sso_username = (user_info.get("username") or "").strip()
     if not sso_username:
         raise HTTPException(status_code=400, detail="No username from SSO provider")
-    sso_email = f"{sso_username}@test.com"
+    # ai-hub 用户表是邮箱权威源；verify 未返回时才退回占位邮箱
+    sso_email = (user_info.get("email") or "").strip() or f"{sso_username}@test.com"
     aihub_roles = user_info.get("roles") or []
     sso_role = "admin" if isinstance(aihub_roles, list) and "ADMIN" in aihub_roles else "user"
-    print(f"[sso] user={sso_username} aihub_roles={aihub_roles} sso_role={sso_role}")
+    print(f"[sso] user={sso_username} aihub_roles={aihub_roles} sso_role={sso_role} email={sso_email}")
     litellm_key = user_info.get("litellmApiKey")
     user = await get_user_by_username(db, sso_username)
     if user is None:
@@ -165,6 +166,9 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
 
         random_pw = secrets.token_urlsafe(24)
         base_username = sso_username
+        # 邮箱 unique 约束：ai-hub 邮箱已被其他本地账号占用时退回占位邮箱
+        if await get_user_by_email(db, sso_email):
+            sso_email = f"{sso_username}@test.com"
         try:
             user = User(
                 username=base_username,
@@ -200,6 +204,9 @@ async def sso_login(req: SSOLoginRequest, db: AsyncSession = Depends(get_db)):
         if litellm_key:
             user.litellm_api_key = litellm_key
         user.role = sso_role
+        # 每次登录把 ai-hub 邮箱同步回本地（无冲突时），保证通知收件人始终最新
+        if user.email != sso_email and await get_user_by_email(db, sso_email) is None:
+            user.email = sso_email
         await db.commit()
 
 

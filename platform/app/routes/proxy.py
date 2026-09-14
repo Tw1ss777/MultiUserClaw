@@ -114,7 +114,7 @@ def _safe_session_part(value: Any, fallback: str = "default") -> str:
 
 
 def _cron_session_key(agent_id: str, job_name: str) -> str:
-    agent = _safe_session_part(agent_id or "main", "main")
+    agent = _safe_session_part(agent_id or "manager", "manager")
     name = _safe_session_part(job_name or "cron", "cron")
     return f"agent:{agent}:cron-{name}-{uuid.uuid4().hex[:6]}"
 
@@ -291,7 +291,7 @@ async def _proxy_hermes_cron(path: str, request: Request, base_url: str) -> JSON
     if parts == ["cron", "jobs"] and request.method == "POST":
         body = json.loads((await request.body()) or b"{}")
         name = body.get("name") or "cron job"
-        agent_id = body.get("agentId") or body.get("agent_id") or "main"
+        agent_id = body.get("agentId") or body.get("agent_id") or "manager"
         session_key = body.get("sessionKey") or body.get("session_key") or _cron_session_key(str(agent_id), str(name))
         session_title = body.get("sessionTitle") or body.get("session_title") or str(name)
         await _ensure_hermes_cron_session(base_url, str(session_key), str(session_title))

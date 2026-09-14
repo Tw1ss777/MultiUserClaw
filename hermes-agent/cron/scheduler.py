@@ -14,9 +14,11 @@ import contextvars
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime
 
 # fcntl is Unix-only; on Windows use msvcrt for file locking
@@ -129,6 +131,20 @@ from cron.jobs import get_due_jobs, mark_job_run, save_job_output, advance_next_
 # response with this marker to suppress delivery.  Output is still saved
 # locally for audit.
 SILENT_MARKER = "[SILENT]"
+
+
+def _cron_session_agent_prefix(job: dict) -> str:
+    """Return an ``agent:<id>:`` prefix for the cron run session.
+
+    Parsed from the job's ``nanobot_session_key`` (e.g.
+    ``agent:manager:cron-daily-report-a1b2c3``). Multi-agent platforms use
+    this prefix to route the session to the owning agent in session lists.
+    Jobs created outside such a platform have no key and keep the legacy
+    unprefixed ``cron_<job_id>_<ts>`` session ids.
+    """
+    nanobot_key = str(job.get("nanobot_session_key") or "").strip()
+    match = re.match(r"^(agent:([^:]+):)", nanobot_key)
+    return match.group(1) if match else ""
 
 
 def _append_nanobot_cron_result(job: dict, content: str, adapters=None) -> Optional[str]:
@@ -1057,6 +1073,96 @@ def _scan_assembled_cron_prompt(assembled: str, job: dict) -> str:
     return assembled
 
 
+def _notify_target_urls(base: str) -> list:
+    """Callback targets in preference order.
+
+    1. the configured URL (container-name DNS);
+    2. the docker bridge default-route gateway IP with the same port — the
+       host side of the bridge, where the platform gateway's published port
+       listens.  Read from /proc/net/route, so it needs no DNS at all:
+       dockerd's embedded resolver intermittently returns EAI_AGAIN inside
+       containers, which silently ate single-shot callbacks.
+    """
+    targets = [base]
+    try:
+        import socket
+        from urllib.parse import urlsplit
+
+        port = urlsplit(base).port or 80
+        with open("/proc/net/route", "rb") as fh:
+            for line in fh.read().splitlines()[1:]:
+                parts = line.split()
+                if len(parts) > 2 and parts[1] == b"00000000":
+                    gw = socket.inet_ntoa(bytes.fromhex(parts[2].decode())[::-1])
+                    if gw not in ("0.0.0.0", ""):
+                        targets.append(f"http://{gw}:{port}")
+                    break
+    except Exception:
+        pass
+    return targets
+
+
+def _notify_platform_cron_done(job: dict, success: bool, result_text: str = "") -> None:
+    """Fire-and-forget callback to the platform gateway after a job finishes.
+
+    The gateway resolves the container owner from the token and emails
+    them (best-effort).  ``result_text`` carries the agent's final reply
+    (or the error text on failure) so the email body can quote it.
+    Failures here are logged at debug level and never raised —
+    notifications must not break the cron flow.
+    """
+    try:
+        import json as _json
+        import urllib.request
+
+        proxy_url = os.getenv("NANOBOT_PROXY__URL", "").rstrip("/")
+        token = os.getenv("NANOBOT_PROXY__TOKEN", "").strip()
+        if not proxy_url or not token:
+            return
+        if proxy_url.endswith("/llm/v1"):
+            base = proxy_url[: -len("/llm/v1")]
+        else:
+            base = proxy_url
+        payload = _json.dumps(
+            {
+                "job_name": str(job.get("name") or job.get("id") or ""),
+                "session_key": str(job.get("nanobot_session_key") or ""),
+                "success": bool(success),
+                # Cap the wire size: the email side truncates again for display.
+                "result_text": str(result_text or "")[:65535],
+            }
+        ).encode("utf-8")
+        # Defence in depth against DNS blackouts: proxy-free opener, retries,
+        # and a DNS-free fallback target (bridge default-route IP).
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        last_exc = None
+        for target in _notify_target_urls(base):
+            for attempt in range(2):
+                try:
+                    req = urllib.request.Request(
+                        target + "/api/internal/cron-notify",
+                        data=payload,
+                        headers={
+                            "Content-Type": "application/json",
+                            "X-Container-Token": token,
+                        },
+                        method="POST",
+                    )
+                    with opener.open(req, timeout=5) as resp:
+                        resp.read()
+                    return
+                except Exception as exc:
+                    last_exc = exc
+                    time.sleep(1)
+        logger.warning(
+            "Platform cron-notify callback failed for all targets %s: %s",
+            _notify_target_urls(base),
+            last_exc,
+        )
+    except Exception as exc:
+        logger.debug("Platform cron-notify callback skipped: %s", exc)
+
+
 def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
     """
     Execute a single cron job.
@@ -1238,7 +1344,10 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
         logger.info("Job '%s': script produced no output, skipping AI call.", job_name)
         return True, "", SILENT_MARKER, None
     origin = _resolve_origin(job)
-    _cron_session_id = f"cron_{job_id}_{_hermes_now().strftime('%Y%m%d_%H%M%S')}"
+    _cron_session_id = (
+        f"{_cron_session_agent_prefix(job)}"
+        f"cron_{job_id}_{_hermes_now().strftime('%Y%m%d_%H%M%S')}"
+    )
 
     logger.info("Running job '%s' (ID: %s)", job_name, job_id)
     logger.info("Prompt: %s", prompt[:100])
@@ -1824,11 +1933,13 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
                     error = "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
 
                 mark_job_run(job["id"], success, error, delivery_error=delivery_error)
+                _notify_platform_cron_done(job, success, deliver_content)
                 return True
 
             except Exception as e:
                 logger.error("Error processing job %s: %s", job['id'], e)
                 mark_job_run(job["id"], False, str(e))
+                _notify_platform_cron_done(job, False, str(e))
                 return False
 
         # Partition due jobs: those with a per-job workdir mutate

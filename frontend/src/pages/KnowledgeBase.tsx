@@ -227,7 +227,7 @@ export default function KnowledgeBase() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-dark-text">知识库</h1>
         <p className="mt-1 text-sm text-dark-text-secondary">
-          管理每个 Agent 的知识库文件，支持上传文档、PDF、数据文件等
+          管理每个 Agent 的知识库文件，支持上传文档、PDF、邮件（.msg/.eml）等；.md 与邮件文件会被解析为可检索的知识页
         </p>
       </div>
 
@@ -464,7 +464,7 @@ export default function KnowledgeBase() {
                 <div className="px-4 py-12 text-center text-sm text-dark-text-secondary">
                   <BookOpen size={32} className="mx-auto mb-3 text-dark-text-secondary/50" />
                   <p>知识库为空</p>
-                  <p className="mt-1 text-xs">上传文档、PDF、数据文件等，Agent 可在对话中引用</p>
+                  <p className="mt-1 text-xs">上传文档、PDF、邮件（.msg/.eml）等，Agent 可在对话中检索引用</p>
                 </div>
               )}
             </div>
