@@ -14,6 +14,11 @@ from docker.errors import NotFound as DockerNotFound
 from fastapi import HTTPException, UploadFile, status
 
 from app.container.manager import get_docker_container
+from app.runtime_backends.email_ingest import (
+    build_email_page_markdown,
+    is_email_ingest_path,
+    sidecar_page_path,
+)
 
 DEFAULT_HERMES_UPLOAD_DIR = "profiles/main/workspace/uploads"
 HERMES_DATA_ROOT = "/opt/data"
@@ -406,17 +411,17 @@ def write_hermes_filemanager_file(container_id_or_name: str | None, requested_pa
     try:
         _ensure_openclaw_compat_links(container)
         ok = container.put_archive(HERMES_DATA_ROOT, archive)
-        chown_hermes_path(container, f"{HERMES_DATA_ROOT}/{upload_dir}")
+        chown_hermes_path(container, f"{HERMES_DATA_ROOT}/{storage_path}")
     except DockerAPIError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write Hermes file") from exc
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write Hermes file")
     return {
-        "path": relative_path,
-        "name": stored_name,
-        "original_name": original_name,
-        "size": len(contents),
-        "content_type": file.content_type or "application/octet-stream",
+        "ok": True,
+        "path": storage_path,
+        "name": posixpath.basename(storage_path),
+        "size": len(content.encode("utf-8")),
+        "runtime": "hermes",
     }
 
 
@@ -608,6 +613,20 @@ async def write_upload_to_hermes_container(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write Hermes file") from exc
     if not ok:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to write Hermes file")
+
+    # 知识库邮件入库：.msg/.eml 上传即转换为 sidecar .md 知识页（尽力而为，失败不影响上传本身）
+    if is_email_ingest_path(relative_path):
+        try:
+            page_markdown = build_email_page_markdown(stored_name, contents)
+            if page_markdown:
+                write_hermes_filemanager_file(
+                    container_id_or_name,
+                    sidecar_page_path(relative_path),
+                    page_markdown,
+                )
+        except Exception as exc:
+            print(f"[knowledge-email-ingest] sidecar conversion failed for {relative_path}: {exc}")
+
     return {
         "path": relative_path,
         "name": stored_name,
@@ -646,6 +665,9 @@ def delete_hermes_filemanager_path(container_id_or_name: str | None, requested_p
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=output.decode("utf-8", errors="replace") or "Failed to delete Hermes path",
         )
+    # 删除知识库原始邮件时，连带清理其 sidecar 知识页（尽力而为）
+    if is_email_ingest_path(storage_path):
+        container.exec_run(["sh", "-lc", f"rm -f -- {shlex.quote(sidecar_page_path(absolute_path))}"])
     return {"ok": True, "path": storage_path, "runtime": "hermes"}
 
 

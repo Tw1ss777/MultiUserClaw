@@ -22,6 +22,7 @@ dependencies = [
     "websockets>=12.0",
     "litellm>=1.0.0",
     "python-multipart>=0.0.9",
+    "extract-msg>=0.48.0",
     "openai",
 ]
 

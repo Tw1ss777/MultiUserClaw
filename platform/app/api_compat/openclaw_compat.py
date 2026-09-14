@@ -14,6 +14,7 @@ from app.runtime_backends.hermes_agents import (
     delete_agent_from_container,
     get_agent_file_from_container,
     list_agent_files_from_container,
+    set_agent_profile_file_in_hermes_container,
 )
 from app.runtime_backends.hermes_files import (
     browse_hermes_filemanager,
@@ -53,6 +54,10 @@ class SharedChatRequest(BaseModel):
 class CreateAgentRequest(BaseModel):
     name: str
     workspace: str | None = None
+
+
+class AgentFileUpdateRequest(BaseModel):
+    content: str
 
 
 @router.get("/api/openclaw/agents")
@@ -112,6 +117,18 @@ async def get_dedicated_agent_file(
     async with async_session() as db:
         container = await ensure_running(db, user.id)
     return get_agent_file_from_container(container.docker_id, agent_id, name)
+
+
+@router.put("/api/openclaw/agents/{agent_id}/files/{name:path}")
+async def set_dedicated_agent_file(
+    agent_id: str,
+    name: str,
+    req: AgentFileUpdateRequest,
+    user: User = Depends(get_current_user),
+):
+    async with async_session() as db:
+        container = await ensure_running(db, user.id)
+    return set_agent_profile_file_in_hermes_container(container.docker_id, agent_id, name, req.content)
 
 
 @router.get("/api/openclaw/skills")
