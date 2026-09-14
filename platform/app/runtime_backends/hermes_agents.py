@@ -14,6 +14,8 @@ from app.container.manager import get_docker_container
 
 DEFAULT_HERMES_MODEL = "hermes-agent"
 SYSTEM_AGENT_IDS = {"main", "manager", "programmer", "researcher", "hr", "doctor"}
+# 默认 Agent：配置文件只读，禁止通过平台编辑接口修改
+DEFAULT_READONLY_AGENT_IDS = {"main", "manager", "programmer", "insurance-analyze-counselor"}
 HERMES_PROFILES_ROOT = "/opt/data/profiles"
 CONTAINER_PROFILES_DIR = "/opt/data/profiles"
 HERMES_PROFILE_GATEWAY_BASE_PORT = 19080
@@ -256,7 +258,8 @@ def _profile_workspace(agent_id: str) -> str:
 
 
 def _profile_script_common() -> str:
-    return r'''
+    readonly_literal = ", ".join(json.dumps(agent_id) for agent_id in sorted(DEFAULT_READONLY_AGENT_IDS))
+    return f"READONLY = {{{readonly_literal}}}\n" + r'''
 import json
 import os
 import re
@@ -670,7 +673,7 @@ path = profile_dir(agent_id)
 if not path.is_dir():
     print("Agent not found", file=sys.stderr)
     sys.exit(4)
-if agent_id in SYSTEM:
+if agent_id in READONLY:
     print("System Agent is read-only", file=sys.stderr)
     sys.exit(3)
 target = path / "workspace" / file_name
@@ -1088,7 +1091,17 @@ for sub in ['memories', 'sessions', 'skills', 'skins', 'logs', 'plans', 'workspa
 )
 (profile / 'workspace' / 'AGENTS.md').write_text(
     '# AGENTS.md - {agent_id}\\n\\n'
-    '本文件夹是 {agent_id} 的工作区。\\n',
+    '本文件夹是 {agent_id} 的工作区。\\n\\n'
+    '---\\n\\n'
+    '# 🛠️ 文件落盘规范 (核心行为规范)\\n\\n'
+    '> 本章节为最高优先级的行为准则，所有输出必须遵守，无例外。\\n\\n'
+    '### 1. 强制落盘原则\\n'
+    '*   **禁止在对话框堆砌代码/文本**：严禁要求用户“请复制以下内容”、“你可以另存为xxx”。\\n'
+    '*   **物理交付**：生成的任何交付物（HTML、Markdown、代码、图表等），**必须使用工具真实写入文件系统**。\\n\\n'
+    '### 2. 默认存储策略\\n'
+    '*   **按任务建立独立文件夹**：每次生成新文件（需求文档、报告、代码、图表等任意交付物）前，在 Workspace 根目录下创建一个以 文件名或任务名 命名的新文件夹。\\n'
+    '*   **分类存放**：本次会话中该任务生成的所有相关文件均保存在此文件夹内，避免文件散落在根目录造成混乱。\\n'
+    '*   **路径示例**：`/opt/data/profiles/<profile_name>/workspace/[生成文件的文件名]/` 或用户指定的自定义路径。\\n',
     encoding='utf-8',
 )
 (profile / 'memories' / 'USER.md').write_text(

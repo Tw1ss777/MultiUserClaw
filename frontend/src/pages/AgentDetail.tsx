@@ -7,10 +7,17 @@ import {
   Loader2,
   Eye,
   EyeOff,
+  Pencil,
+  Save,
+  X,
 } from 'lucide-react'
 import { fetchAgentDetail, fetchAgents } from '../store/agents'
-import { getAgentFile } from '../lib/api'
+import { getAgentFile, setAgentFile } from '../lib/api'
 import type { BackendAgent, AgentFile } from '../types/agent'
+
+// 默认 Agent 配置文件只读，不开放编辑（后端同步强制校验）
+const READONLY_AGENT_IDS = ['main', 'manager', 'programmer', 'insurance-analyze-counselor']
+const EDITABLE_FILES = ['SOUL.md', 'AGENTS.md', 'IDENTITY.md', 'USER.md']
 
 interface AgentDetailData {
   agentId: string
@@ -26,6 +33,10 @@ export default function AgentDetail() {
   const [detail, setDetail] = useState<AgentDetailData | null>(null)
   const [expandedFiles, setExpandedFiles] = useState<Record<string, string | null>>({})
   const [loadingFiles, setLoadingFiles] = useState<Record<string, boolean>>({})
+  const [editingFile, setEditingFile] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -61,6 +72,44 @@ export default function AgentDetail() {
     }
   }
 
+  const startEdit = async (fileName: string) => {
+    if (!id) return
+    let content = expandedFiles[fileName]
+    if (content === undefined || content === null) {
+      setLoadingFiles(prev => ({ ...prev, [fileName]: true }))
+      try {
+        const result = await getAgentFile(id, fileName)
+        content = result?.file?.content ?? ''
+        setExpandedFiles(prev => ({ ...prev, [fileName]: content }))
+      } catch {
+        content = ''
+      } finally {
+        setLoadingFiles(prev => ({ ...prev, [fileName]: false }))
+      }
+    }
+    setEditDraft(content ?? '')
+    setEditingFile(fileName)
+    setSaveMsg(null)
+  }
+
+  const saveEdit = async () => {
+    if (!id || !editingFile) return
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      await setAgentFile(id, editingFile, editDraft)
+      const name = editingFile
+      setExpandedFiles(prev => ({ ...prev, [name]: editDraft }))
+      setEditingFile(null)
+      setSaveMsg('已保存')
+      setTimeout(() => setSaveMsg(null), 2500)
+    } catch (err: any) {
+      setSaveMsg(err?.message || '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 className="animate-spin text-dark-text-secondary" size={32} /></div>
 
   if (!agentInfo && !detail) {
@@ -80,6 +129,7 @@ export default function AgentDetail() {
 
   const agentName = agentInfo?.name || id || ''
   const emoji = agentInfo?.identity?.emoji
+  const canEdit = !!id && !READONLY_AGENT_IDS.includes(id)
 
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`
@@ -167,12 +217,53 @@ export default function AgentDetail() {
                           )}
                         </button>
                       )}
+                      {!file.missing && canEdit && EDITABLE_FILES.includes(file.name) && editingFile !== file.name && (
+                        <button
+                          onClick={() => startEdit(file.name)}
+                          className="flex items-center gap-1 text-xs text-accent-blue/70 hover:text-accent-blue transition-colors"
+                        >
+                          <Pencil size={13} />
+                          编辑
+                        </button>
+                      )}
                     </div>
                   </div>
-                  {isExpanded && expandedFiles[file.name] !== null && (
-                    <pre className="mt-1 mb-1 mx-1 whitespace-pre-wrap rounded-lg bg-dark-bg/60 border border-dark-border p-4 text-sm text-dark-text leading-relaxed font-mono max-h-96 overflow-y-auto">
-                      {expandedFiles[file.name]}
-                    </pre>
+                  {editingFile === file.name ? (
+                    <div className="mt-1 mb-1 mx-1">
+                      <textarea
+                        value={editDraft}
+                        onChange={e => setEditDraft(e.target.value)}
+                        rows={18}
+                        className="w-full rounded-lg bg-dark-bg/60 border border-dark-border p-4 text-sm text-dark-text leading-relaxed font-mono focus:outline-none focus:border-accent-blue"
+                      />
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          onClick={saveEdit}
+                          disabled={saving}
+                          className="flex items-center gap-1 rounded-lg bg-accent-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-blue/90 disabled:opacity-50 transition-colors"
+                        >
+                          {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                          保存
+                        </button>
+                        <button
+                          onClick={() => setEditingFile(null)}
+                          disabled={saving}
+                          className="flex items-center gap-1 rounded-lg border border-dark-border px-3 py-1.5 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 transition-colors"
+                        >
+                          <X size={13} />
+                          取消
+                        </button>
+                        {saveMsg && (
+                          <span className={`text-xs ${saveMsg === '已保存' ? 'text-green-500' : 'text-red-500'}`}>{saveMsg}</span>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    isExpanded && expandedFiles[file.name] !== null && (
+                      <pre className="mt-1 mb-1 mx-1 whitespace-pre-wrap rounded-lg bg-dark-bg/60 border border-dark-border p-4 text-sm text-dark-text leading-relaxed font-mono max-h-96 overflow-y-auto">
+                        {expandedFiles[file.name]}
+                      </pre>
+                    )
                   )}
                 </div>
               )
