@@ -104,6 +104,21 @@ RUN cd web && npm run build && \
 USER root
 RUN chmod +x /opt/hermes/docker/entrypoint.sh
 
+# ---- skill Python 依赖：python3-pypff (libpff) -------------------------------
+# parse-pst skill 需要 pypff 模块。不要用 pip：PyPI 上的 libpff-python 没有
+# Linux wheel（只有 macOS + sdist），且容器里的 pip 受 PEP 668 限制、venv 内
+# 根本没有 pip。Debian 13 源里已有 python3-pypff，用它。
+# 注意它装在 /usr/lib/python3/dist-packages，而运行时是 /opt/hermes/.venv 里的
+# python，venv 不包含 dist-packages，所以把 .so 软链进 venv 的 site-packages。
+# 用 python 自身解析 site-packages 路径，避免硬编码 Python 版本号。
+# 这一层刻意放在文件末尾：只新增一个几 MB 的小层，不会让上面的
+# npm install / uv install / COPY . / web build 缓存失效。
+RUN apt-get -o Acquire::Retries=5 update && \
+    apt-get -o Acquire::Retries=5 install -y --no-install-recommends python3-pypff && \
+    VENV_SP="$(/opt/hermes/.venv/bin/python3 -c 'import site; print(site.getsitepackages()[0])')" && \
+    ln -sf /usr/lib/python3/dist-packages/pypff*.so "$VENV_SP/" && \
+    rm -rf /var/lib/apt/lists/*
+
 ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
 ENV HERMES_HOME=/opt/data
 ENV PATH="/opt/data/.local/bin:${PATH}"

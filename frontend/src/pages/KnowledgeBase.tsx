@@ -227,7 +227,7 @@ export default function KnowledgeBase() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-dark-text">知识库</h1>
         <p className="mt-1 text-sm text-dark-text-secondary">
-          管理每个 Agent 的知识库文件，支持上传文档、PDF、邮件（.msg/.eml）等；.md 与邮件文件会被解析为可检索的知识页
+          管理每个 Agent 的知识库文件，支持上传文档、PDF、邮件（.msg/.eml/.pst）等；.md 与邮件文件会被解析为可检索的知识页
         </p>
       </div>
 
