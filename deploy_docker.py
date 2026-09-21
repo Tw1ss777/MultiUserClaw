@@ -302,12 +302,19 @@ def _hermes_build_command(*, use_cache: bool = False, with_browser: bool = False
         ]
     )
     bridge = " ".join(parts)
-    # Dockerfile.bridge 基于 hermes-base:latest；本地缺失时 Docker 会尝试从
-    # docker.io 拉取导致内网 pull access denied，因此先确保基础镜像存在。
-    return (
+    # Dockerfile.bridge 默认 FROM hermes-base:amd64，而基础镜像构建产物是
+    # hermes-base:latest；本地两者都缺失时 Docker 会尝试从 docker.io 拉取
+    # 导致内网 pull access denied。这里保证两个 tag 都存在：
+    # 任一已存在则互相补齐，都不存在才真正构建。
+    ensure_base = (
         "if ! docker image inspect hermes-base:latest >/dev/null 2>&1; then "
-        f"{_hermes_base_build_command(use_cache=use_cache)}; fi && {bridge}"
+        "if docker image inspect hermes-base:amd64 >/dev/null 2>&1; then "
+        "docker tag hermes-base:amd64 hermes-base:latest; else "
+        f"{_hermes_base_build_command(use_cache=use_cache)}; fi; fi && "
+        "if ! docker image inspect hermes-base:amd64 >/dev/null 2>&1; then "
+        "docker tag hermes-base:latest hermes-base:amd64; fi"
     )
+    return f"{ensure_base} && {bridge}"
 
 
 def build_hermes_image(*, with_browser: bool = False):

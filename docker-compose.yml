@@ -8,12 +8,14 @@
 # User containers are created dynamically by the gateway via Docker API,
 # NOT defined in this compose file.
 
-name: openclaw
-
 services:
   postgres:
-    container_name: openclaw-postgres
     image: postgres:16-alpine
+    container_name: openclaw-postgres
+    restart: unless-stopped
+    # 连接池放大后必须同步抬高 PG 上限：workers(4) × pool_size(200) = 800，预留 100
+    # idle_in_transaction_session_timeout: 60s 强制释放卡死的事务内空闲连接（回收连接池）
+    command: ["postgres", "-c", "max_connections=900", "-c", "idle_in_transaction_session_timeout=60000"]
     environment:
       POSTGRES_USER: nanobot
       POSTGRES_PASSWORD: nanobot
@@ -24,62 +26,30 @@ services:
       - pgdata:/var/lib/postgresql/data
     networks:
       - openclaw-internal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nanobot -d nanobot_platform"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
 
   gateway:
+    image: openclaw_gateway:latest
     container_name: openclaw-gateway
-    build:
-      context: ./platform
-      args:
-        APT_DEBIAN_MIRROR: ${APT_DEBIAN_MIRROR:-http://mirrors.ustc.edu.cn/debian}
-        APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-http://mirrors.ustc.edu.cn/debian-security}
-        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      PLATFORM_DATABASE_URL: postgresql+asyncpg://nanobot:nanobot@postgres:5432/nanobot_platform
+      PLATFORM_DATABASE_URL: "postgresql+asyncpg://nanobot:nanobot@postgres:5432/nanobot_platform"
+      PLATFORM_AIHUB_BASE_URL: "http://172.20.10.2:3000/agents/hub_api"
+      PLATFORM_DEDICATED_RUNTIME_BACKEND: "hermes"
+      PLATFORM_LITELLM_BASE_URL: "http://172.20.10.2:4000"
+      PLATFORM_LITELLM_API_KEY: ""
+      PLATFORM_LITELLM_MODELS: '[{"id": "qwen3.7-plus", "name": "qwen3.7-plus"},{"id":"qwen-max","name":"通义千问Max"}]'
       PLATFORM_JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      # SSO: ai-hub verify endpoint (host.docker.internal 指向宿主机)
 
       # 启动时自动创建管理员账号
-      PLATFORM_ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      PLATFORM_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      PLATFORM_ADMIN_USERNAME: "admin"
+      PLATFORM_ADMIN_PASSWORD: "admin123"
 
-      # LLM API Keys — ONLY here, never in user containers
-      PLATFORM_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      PLATFORM_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      PLATFORM_OPENAI_API_BASE: ${OPENAI_API_BASE:-}
-      PLATFORM_DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      PLATFORM_OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      PLATFORM_DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
-      PLATFORM_MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
-      PLATFORM_MINIMAX_API_BASE: ${MINIMAX_API_BASE:-}
-      PLATFORM_AIHUBMIX_API_KEY: ${AIHUBMIX_API_KEY:-}
-      PLATFORM_EVOLINK_API_KEY: ${EVOLINK_API_KEY:-}
-      PLATFORM_MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
-      PLATFORM_KIMI_API_KEY: ${KIMI_API_KEY:-}
-      PLATFORM_ZHIPU_API_KEY: ${ZHIPU_API_KEY:-}
-      PLATFORM_DOUBAO_API_KEY: ${DOUBAO_API_KEY:-}
-
-      # Self-hosted vLLM
-      PLATFORM_HOSTED_VLLM_API_KEY: ${HOSTED_VLLM_API_KEY:-}
-      PLATFORM_HOSTED_VLLM_API_BASE: ${HOSTED_VLLM_API_BASE:-}
-
-      PLATFORM_DEFAULT_MODEL: ${DEFAULT_MODEL:-dashscope/qwen3-coder-plus}
       PLATFORM_OPENCLAW_IMAGE: ${PLATFORM_OPENCLAW_IMAGE:-openclaw:latest}
       PLATFORM_HERMES_IMAGE: ${PLATFORM_HERMES_IMAGE:-nanobot-hermes-agent:latest}
       PLATFORM_DEDICATED_RUNTIME_BACKEND: ${PLATFORM_DEDICATED_RUNTIME_BACKEND:-hermes}
-      PLATFORM_HERMES_CONNECT_RETRIES: ${PLATFORM_HERMES_CONNECT_RETRIES:-60}
-      PLATFORM_HERMES_RETRY_DELAY_SECONDS: ${PLATFORM_HERMES_RETRY_DELAY_SECONDS:-0.5}
-      PLATFORM_HERMES_API_TOOLSETS: ${PLATFORM_HERMES_API_TOOLSETS:-terminal,file,skills}
-      PLATFORM_HERMES_REASONING_EFFORT: ${PLATFORM_HERMES_REASONING_EFFORT:-none}
-      PLATFORM_HERMES_SERVICE_TIER: ${PLATFORM_HERMES_SERVICE_TIER:-}
-      PLATFORM_MINIMAX_M27_USE_HIGHSPEED: ${MINIMAX_M27_USE_HIGHSPEED:-true}
-      PLATFORM_DEDICATED_HERMES_URL: ${PLATFORM_DEDICATED_HERMES_URL:-}
-      PLATFORM_DEV_OPENCLAW_URL: ${PLATFORM_DEV_OPENCLAW_URL:-}
       PLATFORM_CONTAINER_NETWORK: openclaw-internal
       PLATFORM_SHARED_OPENCLAW_ENABLED: ${PLATFORM_SHARED_OPENCLAW_ENABLED:-true}
       PLATFORM_SHARED_RUNTIME_BACKEND: ${PLATFORM_SHARED_RUNTIME_BACKEND:-hermes}
@@ -90,11 +60,20 @@ services:
       PLATFORM_CONTAINER_TZ: ${CONTAINER_TZ:-Asia/Shanghai}
       PLATFORM_CONTAINER_MEMORY_LIMIT: ${PLATFORM_CONTAINER_MEMORY_LIMIT:-2g}
       PLATFORM_CONTAINER_SHM_SIZE: ${PLATFORM_CONTAINER_SHM_SIZE:-1g}
-      PLATFORM_TRAINING_TRACE_ENABLED: ${PLATFORM_TRAINING_TRACE_ENABLED:-false}
-      PLATFORM_TRAINING_TRACE_INGEST_ENABLED: ${PLATFORM_TRAINING_TRACE_INGEST_ENABLED:-false}
-      PLATFORM_TRAINING_TRACE_INGEST_TOKEN: ${PLATFORM_TRAINING_TRACE_INGEST_TOKEN:-}
-      PLATFORM_TRAINING_TRACE_DIR: ${PLATFORM_TRAINING_TRACE_DIR:-/app/.hermes/training_traces}
-      PLATFORM_TRAINING_TRACE_HASH_SALT: ${PLATFORM_TRAINING_TRACE_HASH_SALT:-}
+      # 邮件通知（定时任务完成提醒），.env 中 SMTP_* 配置
+      PLATFORM_ENABLE_EMAIL_NOTIFICATION: ${ENABLE_EMAIL_NOTIFICATION:-false}
+      # DB 连接池（每 worker 一份）：总连接 = workers(4) × (POOL_SIZE + MAX_OVERFLOW)
+      PLATFORM_DB_POOL_SIZE: "200"
+      PLATFORM_DB_MAX_OVERFLOW: "0"
+      PLATFORM_DB_POOL_TIMEOUT: "60"
+      PLATFORM_SMTP_HOST: ${SMTP_HOST:-}
+      PLATFORM_SMTP_PORT: ${SMTP_PORT:-465}
+      PLATFORM_SMTP_USER: ${SMTP_USER:-}
+      PLATFORM_SMTP_PASS: ${SMTP_PASS:-}
+      PLATFORM_SMTP_FROM: ${SMTP_FROM:-}
+      PLATFORM_SMTP_USE_SSL: ${SMTP_USE_SSL:-true}
+      # 收件人覆盖：配了则所有通知邮件统一发给他，不配走任务主人邮箱
+      PLATFORM_NOTIFY_OVERRIDE_EMAIL: ${NOTIFY_OVERRIDE_EMAIL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock  # Docker API access for container management
       - ./.hermes/benchmarks:/app/.hermes/benchmarks:ro
@@ -103,56 +82,46 @@ services:
     networks:
       - openclaw-internal   # talk to postgres + user containers
       - openclaw-external   # accept traffic from frontend / public
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   frontend:
+    image: openclaw_frontend:latest
     container_name: openclaw-frontend
-    build:
-      context: ./frontend
-      args:
-        VITE_API_URL: ${VITE_API_URL:-}
+    restart: unless-stopped
     ports:
       - "3080:3000"
     networks:
       - openclaw-external
-    depends_on:
-      - gateway
 
   manage-front:
+    image: openclaw_manage-front:latest
     container_name: openclaw-manage
-    build: ./manage_front
+    restart: unless-stopped
     ports:
       - "3081:3000"
     environment:
       - API_URL=http://gateway:8080
     networks:
       - openclaw-external
-    depends_on:
-      - gateway
+
+
 
   simple-front:
+    image: openclaw_simple-front:latest
     container_name: openclaw-simple
-    build:
-      context: ./simple_front
-      args:
-        VITE_API_URL: ${VITE_API_URL:-}
+    restart: unless-stopped
     ports:
       - "3082:3000"
     networks:
       - openclaw-external
-    depends_on:
-      - gateway
+volumes:
+  pgdata:
 
 networks:
   openclaw-internal:
-    name: openclaw-internal    # explicit name — prevents Compose project-name prefix
+    name: openclaw-internal
     driver: bridge
-    internal: false  # allow internet access for user containers to download tools
   openclaw-external:
     name: openclaw-external
     driver: bridge
 
-volumes:
-  pgdata:
+
