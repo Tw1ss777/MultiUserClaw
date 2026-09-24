@@ -827,16 +827,23 @@ async def _sync_litellm_config(db: AsyncSession, user_id: str, container: docker
     if lm_provider:
         # litellm already exists — keep user's settings, only ensure models list matches
         # (don't overwrite base_url/api_key the user may have changed in AI models page)
-        lm_provider["models"] = [m for m in lm_models if m not in (lm_provider.get("models") or [])] + (lm_provider.get("models") or [])
+        # 按 id 去重：页面写入的条目可能多带字段（如 enabled），字典相等比较会漏判导致重复
+        _existing_models = lm_provider.get("models") or []
+        _existing_ids = {m.get("id") for m in _existing_models if isinstance(m, dict)}
+        lm_provider["models"] = [m for m in lm_models if m.get("id") not in _existing_ids] + _existing_models
     else:
         providers.append({"name": "litellm", "base_url": settings.litellm_base_url.rstrip("/"), "api_key": user_row.litellm_api_key, "models": lm_models})
     existing_cfg["custom_providers"] = providers
     # 只在 litellm 是本次新添加的（原来不存在）时设置默认模型
     # 之后用户可能已在 AI 模型页面改过默认值，不再覆盖
-    # 但如果当前默认模型不在新模型列表中（模型列表已变更），也需要更新
+    # 但如果当前默认模型在合并后的列表里也不存在（真正失效），才需要纠正。
+    # 合法全集用合并后的 litellm 列表（平台种子 ∪ 用户页面自加），
+    # 不能只用平台 env 清单，否则用户自选默认值会被每次 ensure_running 静默打回
     if lm_models:
         _cur = (existing_cfg.get("model") or {}).get("default", "")
-        if not lm_existed or (_cur and _cur not in [m["id"] for m in lm_models]):
+        _merged = (lm_provider or {}).get("models") or lm_models
+        _valid_ids = [m["id"] for m in _merged if isinstance(m, dict) and m.get("id")]
+        if not lm_existed or (_cur and _cur not in _valid_ids):
             existing_cfg["model"] = {"default": lm_models[0]["id"], "provider": "litellm"}
     raw = yaml.safe_dump(existing_cfg, allow_unicode=True, sort_keys=False).encode("utf-8")
     # 如果配置没有实质性变化，跳过写盘
