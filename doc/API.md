@@ -11,7 +11,7 @@ curl -s http://127.0.0.1:8080/api/ping
 {"message":"pong","service":"openclaw-platform"}%
 
 # 查看容器的状态
-curl -s -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmMDUzNjc4NC1kNzJlLTQ1N2EtYTk0NS03ZjdhYTFmZTExYmYiLCJyb2xlIjoidXNlciIsImV4cCI6MTc3Njc0NzI3NSwidHlwZSI6ImFjY2VzcyJ9.59K0jpn2bOcbV6VqNdqvGH9PL28H13iCUnS2DHhBkm0" http://127.0.0.1:8080/api/openclaw/container/info
+curl -s -H "Authorization: Bearer ${ACCESS_TOKEN}" http://127.0.0.1:8080/api/openclaw/container/info
 {"container_name":"hermes-user-f0536784","status":"running","docker_id":"3a2399dd01ee82722859b6f728c7f5f9fb36f94a9de446195c234f52c0b00a8c","created_at":"2026-04-20T12:31:57.034631","ports":[{"container_port":"18080/tcp","host_port":"0.0.0.0:55297"}]}%
 
 # Hermes Agent

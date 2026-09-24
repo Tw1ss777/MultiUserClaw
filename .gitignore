@@ -75,3 +75,27 @@ hermes-agent/deploy_copy
 openclaw
 platform/deploy_copy
 tmp_skillstore_tests/
+
+# 本地依赖、缓存、镜像包和助手记忆不上传
+.venv/
+.uv-cache/
+.pytest_cache/
+.workbuddy/
+*.tar
+
+# 保留可复现构建所需的配置模板和依赖锁文件
+!/.env.example
+!/uv.lock
+!/hermes-agent/uv.lock
+!/hermes-agent/flake.lock
+
+# 终端粘贴构建日志时产生的根目录临时文件
+/--load
+/--platform
+/-t
+/=
+/\[
+/extracting
+/resolve
+/sha256:*
+/transferring
